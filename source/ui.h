@@ -31,6 +31,7 @@ typedef struct {
 	char model[3][80];        /* the model for each AI ("" = the usual one) */
 	int depth_flip;   /* (a fix-up, set by hand in pixel.ini if he ever looks inside out) */
 	int glow;         /* 1 = the glow round bright things (display.glow=0 in pixel.ini turns it off) */
+	int fps;          /* 1 = frames a second shown in the corner (display.fps=1 in pixel.ini) */
 } UiSettings;
 
 extern UiSettings ui_set;

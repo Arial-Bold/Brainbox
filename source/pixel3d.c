@@ -18,7 +18,7 @@ enum { SKIN, GLOSS, EMIS, MATTE, DARK };
 
 static V3 vp[MAXV], vn[MAXV];
 static float vr[MAXV], vg[MAXV], vb[MAXV];
-static unsigned char vmat[MAXV];
+static unsigned char vmat[MAXV], vgrp[MAXV];   /* the material; the group (how it moves, see place()) */
 static unsigned short tri[MAXT][3];
 static int nverts, ntris;
 
@@ -31,7 +31,6 @@ static inline V3 cross(V3 a, V3 b) { return v3(a.y * b.z - a.z * b.y, a.z * b.x 
 static inline V3 norm(V3 a) { float l = sqrtf(dot(a, a)); return l > 1e-9f ? mul(a, 1 / l) : a; }
 
 typedef struct { float m[3][3]; } M3;
-static const M3 IDENT = { { { 1, 0, 0 }, { 0, 1, 0 }, { 0, 0, 1 } } };
 static M3 rotx(float a) { float c = cosf(a), s = sinf(a); M3 r = { { { 1, 0, 0 }, { 0, c, -s }, { 0, s, c } } }; return r; }
 static M3 rotz(float a) { float c = cosf(a), s = sinf(a); M3 r = { { { c, -s, 0 }, { s, c, 0 }, { 0, 0, 1 } } }; return r; }
 static V3 apply(const M3 *m, V3 v) {
@@ -42,13 +41,14 @@ static V3 apply(const M3 *m, V3 v) {
 /* ------------------------------------------------------------------ shapes */
 
 static float cur_r, cur_g, cur_b;
-static int cur_mat;
+static int cur_mat, cur_grp;
+enum { G_HEAD, G_GLOBE, G_PENCIL, G_FIXED };
 static void colour(float r, float g, float b, int mat) { cur_r = r; cur_g = g; cur_b = b; cur_mat = mat; }
 
 static int vert(V3 p, V3 n) {
     if (nverts >= MAXV) return -1;
     vp[nverts] = p; vn[nverts] = n;
-    vr[nverts] = cur_r; vg[nverts] = cur_g; vb[nverts] = cur_b; vmat[nverts] = (unsigned char)cur_mat;
+    vr[nverts] = cur_r; vg[nverts] = cur_g; vb[nverts] = cur_b; vmat[nverts] = (unsigned char)cur_mat; vgrp[nverts] = (unsigned char)cur_grp;
     return nverts++;
 }
 
@@ -114,7 +114,9 @@ static void tube(const V3 *path, int n, float r, int seg) {
             vert(add(path[i], mul(d, r)), d);
         }
     }
+    int t0 = ntris;
     grid(base, seg, n);
+    for (int k = t0; k < ntris; k++) { unsigned short x = tri[k][1]; tri[k][1] = tri[k][2]; tri[k][2] = x; }   /* (wound the other way to the spheres: turned round so the outside faces out) */
 }
 
 /* a point on the front of the head (for the lines drawn on it) */
@@ -130,30 +132,30 @@ static V3 surf(float x, float y, float out) {
 
 /* ------------------------------------------------------------ the professor */
 
-static void build(const PixelPose *ps) {
-    nverts = ntris = 0;
+/* The parts that never change shape (most of him) are made and lit once
+ * (S); the moving ones (eyes, lids, brows, mouth, spectacles, bow tie, the
+ * globe's rings, the scribble) every frame (D). How the whole head tilts and
+ * bobs, and the props float, is applied when he's drawn (place()). */
+static int ns, nst;   /* the static part: vertices and triangles */
+static void build(const PixelPose *ps, bool S) {
+    bool D = !S;
+    if (S) nverts = ntris = 0; else { nverts = ns; ntris = nst; }
+    cur_grp = G_HEAD;
     float t = ps->t, talk = ps->talk, blink = ps->blink, th = ps->think;
     const float SK[3] = { 0.90f, 0.73f, 0.64f }, HAIR[3] = { 0.80f, 0.80f, 0.84f }, BROW[3] = { 0.86f, 0.86f, 0.90f };
     M3 r;
+    if (S) {
     colour(SK[0], SK[1], SK[2], SKIN);
     ell(HCX, HCY, 0, HRX, HRY, HRZ, 32, 22, NULL);              /* the head: a tall egg */
     ell(0, 0.02f, -0.06f, 0.46f, 0.36f, 0.50f, 24, 14, NULL);   /* a fuller jaw */
+    }
     for (int sx = -1; sx <= 1; sx += 2) {
+        if (S) {
         colour(0.92f, 0.69f, 0.61f, SKIN); ell(0.29f * sx, 0.22f, -0.43f, 0.12f, 0.09f, 0.08f, 12, 8, NULL);   /* cheeks */
         colour(0.92f, 0.66f, 0.58f, SKIN); ell(0.56f * sx, 0.40f, 0.02f, 0.08f, 0.16f, 0.07f, 12, 8, NULL);    /* ears */
         /* eyes, with heavy upper lids (a wise, amused squint) */
         colour(0.98f, 0.98f, 1.0f, GLOSS); ell(0.20f * sx, 0.52f, -0.50f, 0.125f, 0.11f, 0.085f, 14, 10, NULL);
-        colour(0.20f, 0.30f, 0.48f, GLOSS);
-        ell(0.19f * sx + 0.01f + 0.025f * th + ps->look_x * 0.03f, 0.51f + 0.03f * th, -0.58f, 0.058f, 0.064f, 0.02f, 10, 8, NULL);
-        float lid = 0.06f + 0.06f * blink;
-        r = rotz(-0.18f * sx);
-        colour(SK[0], SK[1], SK[2], SKIN); ell(0.20f * sx, 0.57f - 0.04f * blink, -0.515f, 0.13f, lid, 0.092f, 14, 8, &r);
         colour(0.90f, 0.66f, 0.58f, SKIN); ell(0.20f * sx, 0.45f, -0.51f, 0.12f, 0.03f, 0.08f, 12, 6, NULL);   /* lower lids */
-        /* big expressive eyebrows */
-        float lift = 0.03f * talk + (sx > 0 ? 0.07f : -0.015f) * th + ps->brows * 0.04f;
-        colour(BROW[0], BROW[1], BROW[2], MATTE);
-        r = rotz(0.22f * sx); ell(0.22f * sx, 0.68f + lift, -0.52f, 0.15f, 0.045f, 0.06f, 12, 6, &r);
-        r = rotz(0.5f * sx); ell(0.33f * sx, 0.705f + lift, -0.47f, 0.07f, 0.04f, 0.05f, 10, 6, &r);
         /* tufts of grey hair round the sides and back */
         static const float tufts[4][7] = { { 0.54f, 0.64f, 0.10f, 0.17f, 0.21f, 0.28f, 0.35f }, { 0.57f, 0.42f, 0.16f, 0.14f, 0.22f, 0.26f, 0.05f },
                                            { 0.45f, 0.84f, 0.20f, 0.19f, 0.14f, 0.26f, 0.65f }, { 0.32f, 0.70f, 0.42f, 0.22f, 0.24f, 0.20f, 0.2f } };
@@ -162,7 +164,20 @@ static void build(const PixelPose *ps) {
             r = rotz(tufts[k][6] * sx);
             ell(tufts[k][0] * sx, tufts[k][1], tufts[k][2], tufts[k][3], tufts[k][4], tufts[k][5], 12, 8, &r);
         }
+        continue;
+        }
+        colour(0.20f, 0.30f, 0.48f, GLOSS);
+        ell(0.19f * sx + 0.01f + 0.025f * th + ps->look_x * 0.03f, 0.51f + 0.03f * th, -0.58f, 0.058f, 0.064f, 0.02f, 10, 8, NULL);
+        float lid = 0.06f + 0.06f * blink;
+        r = rotz(-0.18f * sx);
+        colour(SK[0], SK[1], SK[2], SKIN); ell(0.20f * sx, 0.57f - 0.04f * blink, -0.515f, 0.13f, lid, 0.092f, 14, 8, &r);
+        /* big expressive eyebrows */
+        float lift = 0.03f * talk + (sx > 0 ? 0.07f : -0.015f) * th + ps->brows * 0.04f;
+        colour(BROW[0], BROW[1], BROW[2], MATTE);
+        r = rotz(0.22f * sx); ell(0.22f * sx, 0.68f + lift, -0.52f, 0.15f, 0.045f, 0.06f, 12, 6, &r);
+        r = rotz(0.5f * sx); ell(0.33f * sx, 0.705f + lift, -0.47f, 0.07f, 0.04f, 0.05f, 10, 6, &r);
     }
+    if (S) {
     colour(HAIR[0], HAIR[1], HAIR[2], MATTE); ell(0, 0.62f, 0.48f, 0.30f, 0.24f, 0.12f, 14, 8, NULL);   /* the back of the head */
     /* forehead lines */
     colour(0.80f, 0.56f, 0.48f, MATTE);
@@ -179,6 +194,16 @@ static void build(const PixelPose *ps) {
     colour(0.96f, 0.64f, 0.56f, GLOSS); ell(0, 0.24f, -0.70f, 0.085f, 0.075f, 0.08f, 12, 10, NULL);
     colour(0.94f, 0.66f, 0.58f, SKIN);
     for (int sx = -1; sx <= 1; sx += 2) ell(0.065f * sx, 0.22f, -0.66f, 0.045f, 0.04f, 0.04f, 8, 6, NULL);
+    colour(HAIR[0], HAIR[1], HAIR[2], MATTE);
+    ell(0, -0.13f, -0.42f, 0.12f, 0.13f, 0.09f, 12, 8, NULL);   /* a neat grey goatee */
+    ell(0, -0.04f, -0.47f, 0.05f, 0.03f, 0.03f, 8, 6, NULL);
+    /* a short neck, a white collar and the bow tie's knot: where he ends */
+    colour(SK[0], SK[1], SK[2], SKIN); ell(0, -0.27f, 0.02f, 0.20f, 0.13f, 0.20f, 14, 8, NULL);
+    colour(0.94f, 0.95f, 1.0f, MATTE);
+    for (int sx = -1; sx <= 1; sx += 2) { r = rotz(-0.5f * sx); ell(0.10f * sx, -0.36f, -0.22f, 0.10f, 0.05f, 0.08f, 10, 6, &r); }
+    colour(0.72f, 0.06f, 0.10f, GLOSS); ell(0, -0.42f, -0.35f, 0.055f, 0.055f, 0.045f, 10, 8, NULL);
+    }
+    if (D) {
     /* the mouth: a lopsided, knowing smile, or open as he talks */
     if (talk > 0.05f) {
         colour(0.38f, 0.10f, 0.14f, DARK); ell(0, 0.07f, -0.55f, 0.12f, 0.025f + 0.05f * talk, 0.03f, 14, 8, NULL);
@@ -194,9 +219,6 @@ static void build(const PixelPose *ps) {
         }
         colour(0.55f, 0.22f, 0.24f, MATTE); tube(p, n, 0.016f, 6);
     }
-    colour(HAIR[0], HAIR[1], HAIR[2], MATTE);
-    ell(0, -0.13f, -0.42f, 0.12f, 0.13f, 0.09f, 12, 8, NULL);   /* a neat grey goatee */
-    ell(0, -0.04f, -0.47f, 0.05f, 0.03f, 0.03f, 8, 6, NULL);
     /* spectacles: up on his forehead, or down on his nose when he thinks */
     {
         bool down = th >= 0.5f;
@@ -217,10 +239,7 @@ static void build(const PixelPose *ps) {
         V3 b[3] = { add(apply(&R, v3(-0.07f, 0.02f, 0)), at), add(apply(&R, v3(0, 0.035f, 0)), at), add(apply(&R, v3(0.07f, 0.02f, 0)), at) };
         tube(b, 3, 0.015f, 6);
     }
-    /* a short neck, a white collar and the red bow tie: where he ends */
-    colour(SK[0], SK[1], SK[2], SKIN); ell(0, -0.27f, 0.02f, 0.20f, 0.13f, 0.20f, 14, 8, NULL);
-    colour(0.94f, 0.95f, 1.0f, MATTE);
-    for (int sx = -1; sx <= 1; sx += 2) { r = rotz(-0.5f * sx); ell(0.10f * sx, -0.36f, -0.22f, 0.10f, 0.05f, 0.08f, 10, 6, &r); }
+    /* the red bow tie (it bounces) */
     {
         M3 T = rotz(0.15f * sinf(t * 2) + 0.25f * ps->chuckle);
         colour(0.86f, 0.10f, 0.14f, GLOSS);
@@ -233,13 +252,37 @@ static void build(const PixelPose *ps) {
                 vn[i] = apply(&T, vn[i]);
             }
         }
-        colour(0.72f, 0.06f, 0.10f, GLOSS); ell(0, -0.42f, -0.35f, 0.055f, 0.055f, 0.045f, 10, 8, NULL);
     }
-    int head_end = nverts;
-    /* floating props: a little glowing globe, and a pencil that scribbles */
-    if (ps->props) {
-        V3 gc = v3(-1.08f, 0.18f + 0.04f * sinf(t * 1.4f), -0.30f);
-        colour(0.16f, 0.36f, 0.80f, GLOSS); ellipsoid(gc, v3(0.22f, 0.22f, 0.22f), 20, 14, NULL);
+    }
+    /* floating props: a little glowing globe, and a pencil that scribbles
+     * (always made, drawn only when wanted: see pixel3d_draw) */
+    {
+        V3 gc0 = v3(-1.08f, 0.18f, -0.30f), gc = v3(-1.08f, 0.18f + 0.04f * sinf(t * 1.4f), -0.30f);
+        if (S) {
+        cur_grp = G_GLOBE;
+        colour(0.16f, 0.36f, 0.80f, GLOSS); ellipsoid(gc0, v3(0.22f, 0.22f, 0.22f), 20, 14, NULL);
+        colour(0.40f, 0.85f, 0.55f, GLOSS);
+        ellipsoid(add(gc0, v3(-0.06f, 0.07f, -0.19f)), v3(0.09f, 0.06f, 0.05f), 10, 6, NULL);
+        ellipsoid(add(gc0, v3(0.07f, -0.06f, -0.19f)), v3(0.07f, 0.08f, 0.05f), 10, 6, NULL);
+        colour(0.55f, 0.95f, 1.0f, EMIS);
+        for (int k = -1; k <= 1; k++) {
+            V3 p[25];
+            float y = 0.11f * k, rr = sqrtf(0.225f * 0.225f - y * y);
+            for (int i = 0; i < 25; i++) { float a = 6.2831853f * i / 24; p[i] = add(gc0, v3(rr * cosf(a), y, rr * sinf(a))); }
+            tube(p, 25, 0.006f, 4);
+        }
+        V3 pc = v3(1.06f, 0.10f, -0.35f), d = v3(sinf(-0.6f), -cosf(-0.6f), 0);
+        cur_grp = G_PENCIL;
+        V3 body[6];
+        for (int i = 0; i < 6; i++) body[i] = add(pc, mul(d, -0.26f + 0.44f * i / 5));
+        colour(0.98f, 0.80f, 0.25f, GLOSS); tube(body, 6, 0.04f, 6);
+        M3 rp = rotz(-0.6f);
+        colour(0.92f, 0.78f, 0.60f, SKIN); ellipsoid(add(pc, mul(d, 0.23f)), v3(0.035f, 0.06f, 0.035f), 8, 6, &rp);
+        colour(0.2f, 0.2f, 0.25f, MATTE); ellipsoid(add(pc, mul(d, 0.28f)), v3(0.015f, 0.025f, 0.015f), 6, 4, &rp);
+        colour(0.98f, 0.55f, 0.60f, MATTE); ellipsoid(add(pc, mul(d, -0.29f)), v3(0.042f, 0.05f, 0.042f), 8, 6, &rp);
+        }
+        if (D) {
+        cur_grp = G_FIXED;
         colour(0.55f, 0.95f, 1.0f, EMIS);
         for (int k = 0; k < 3; k++) {
             V3 p[25];
@@ -250,37 +293,32 @@ static void build(const PixelPose *ps) {
             }
             tube(p, 25, 0.007f, 4);
         }
-        for (int k = -1; k <= 1; k++) {
-            V3 p[25];
-            float y = 0.11f * k, rr = sqrtf(0.225f * 0.225f - y * y);
-            for (int i = 0; i < 25; i++) { float a = 6.2831853f * i / 24; p[i] = add(gc, v3(rr * cosf(a), y, rr * sinf(a))); }
-            tube(p, 25, 0.006f, 4);
-        }
-        colour(0.40f, 0.85f, 0.55f, GLOSS);
-        ellipsoid(add(gc, v3(-0.06f, 0.07f, -0.19f)), v3(0.09f, 0.06f, 0.05f), 10, 6, NULL);
-        ellipsoid(add(gc, v3(0.07f, -0.06f, -0.19f)), v3(0.07f, 0.08f, 0.05f), 10, 6, NULL);
         V3 pc = v3(1.06f, 0.10f + 0.05f * sinf(t * 3), -0.35f), d = v3(sinf(-0.6f), -cosf(-0.6f), 0);
-        V3 body[6];
-        for (int i = 0; i < 6; i++) body[i] = add(pc, mul(d, -0.26f + 0.44f * i / 5));
-        colour(0.98f, 0.80f, 0.25f, GLOSS); tube(body, 6, 0.04f, 6);
-        M3 rp = rotz(-0.6f);
-        colour(0.92f, 0.78f, 0.60f, SKIN); ellipsoid(add(pc, mul(d, 0.23f)), v3(0.035f, 0.06f, 0.035f), 8, 6, &rp);
-        colour(0.2f, 0.2f, 0.25f, MATTE); ellipsoid(add(pc, mul(d, 0.28f)), v3(0.015f, 0.025f, 0.015f), 6, 4, &rp);
-        colour(0.98f, 0.55f, 0.60f, MATTE); ellipsoid(add(pc, mul(d, -0.29f)), v3(0.042f, 0.05f, 0.042f), 8, 6, &rp);
         V3 tip = add(pc, mul(d, 0.31f)), sc[30];
         for (int i = 0; i < 30; i++) {
             float x = i / 29.0f;
             sc[i] = v3(tip.x - 0.32f + 0.32f * x, tip.y - 0.02f + 0.04f * sinf(x * 18 + t * 4 * ps->scribble), tip.z);
         }
         colour(0.55f, 0.95f, 1.0f, EMIS); tube(sc, 30, 0.008f, 4);
+        }
     }
-    /* the head floats: a little bigger, a little higher, tilting as he thinks */
-    M3 Rt = rotz(0.07f * th + 0.02f * sinf(t) + 0.03f * ps->chuckle * sinf(t * 18));
-    V3 c0 = v3(0, 0.2f, 0);
-    float bob = 0.02f * sinf(t * 1.1f);
-    for (int i = 0; i < head_end; i++) {
-        vp[i] = add(add(mul(apply(&Rt, sub(vp[i], c0)), 1.16f), c0), v3(0, -0.02f + bob, 0));
-        vn[i] = apply(&Rt, vn[i]);
+    if (S) { ns = nverts; nst = ntris; }
+}
+
+/* how each group moves this frame */
+static M3 head_rot;
+static float head_bob, globe_bob, pencil_bob, frame_t;
+static bool show_props;
+static inline V3 place(int i) {
+    V3 p = vp[i];
+    switch (vgrp[i]) {
+    case G_HEAD: {   /* the head floats: a little bigger, tilting as he thinks */
+        V3 c0 = v3(0, 0.2f, 0);
+        return add(add(mul(apply(&head_rot, sub(p, c0)), 1.16f), c0), v3(0, -0.02f + head_bob, 0));
+    }
+    case G_GLOBE: return add(p, v3(0, globe_bob, 0));
+    case G_PENCIL: return add(p, v3(0, pencil_bob, 0));
+    default: return p;
     }
 }
 
@@ -315,15 +353,15 @@ static void light(float *r, float *g, float *b, int i) {
     int m = vmat[i];
     float R, Gc, B;
     if (m == EMIS) {
-        R = cr * 1.3f + rim * 0.5f; Gc = cg * 1.3f + rim * 0.5f; B = cb * 1.3f + rim * 0.5f;
+        R = cr * 1.15f + rim * 0.4f; Gc = cg * 1.15f + rim * 0.4f; B = cb * 1.15f + rim * 0.4f;
     } else {
-        float k = ramp(d) * 0.85f + 0.16f;
+        float k = ramp(d) * 0.74f + 0.12f;
         R = cr * k * 0.95f + cr * f * 0.25f;
         Gc = cg * k * 0.97f + cg * f * 0.25f;
         B = cb * k * 1.05f + cb * f * 0.45f;
-        float rk = m == DARK ? 0 : 0.85f;
+        float rk = m == DARK ? 0 : 0.55f;
         R += 0.45f * rim * rk; Gc += 0.85f * rim * rk; B += 1.0f * rim * rk;
-        float sk = m == GLOSS ? 0.95f : m == SKIN ? 0.18f : 0.06f;
+        float sk = m == GLOSS ? 0.8f : m == SKIN ? 0.08f : 0.04f;
         R += spec * sk; Gc += spec * sk; B += spec * sk;
     }
     *r = R; *g = Gc; *b = B;
@@ -334,11 +372,31 @@ static void light(float *r, float *g, float *b, int i) {
 static float sx_[MAXV], sy_[MAXV], sz_[MAXV];
 static unsigned char cr_[MAXV], cg_[MAXV], cb_[MAXV];
 
+#ifndef CULL_SIGN
+#define CULL_SIGN 1.0f
+#endif
 static unsigned char to8(float v) { v *= 255; return v <= 0 ? 0 : v >= 255 ? 255 : (unsigned char)v; }
 
 void pixel3d_build(const PixelPose *ps) {
-    build(ps);
-    for (int i = 0; i < nverts; i++) {
+    static bool made;
+    if (!made) {   /* the parts that never change: made and lit once */
+        build(ps, true);
+        for (int i = 0; i < ns; i++) {
+            float r, g, b;
+            light(&r, &g, &b, i);
+            cr_[i] = to8(r); cg_[i] = to8(g); cb_[i] = to8(b);
+        }
+        made = true;
+    }
+    build(ps, false);
+    float t = ps->t, th = ps->think;
+    head_rot = rotz(0.07f * th + 0.02f * sinf(t) + 0.03f * ps->chuckle * sinf(t * 18));
+    head_bob = 0.02f * sinf(t * 1.1f);
+    globe_bob = 0.04f * sinf(t * 1.4f);
+    pencil_bob = 0.05f * sinf(t * 3);
+    show_props = ps->props;
+    frame_t = t;
+    for (int i = ns; i < nverts; i++) {
         float r, g, b;
         light(&r, &g, &b, i);
         cr_[i] = to8(r); cg_[i] = to8(g); cb_[i] = to8(b);
@@ -349,7 +407,7 @@ void pixel3d_draw(float x, float y, float scale, float alpha, float mirror_y, Pi
     const float CAMY = 0.15f, CAMZ = -4.9f, FOV = 560 * scale;
     float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
     for (int i = 0; i < nverts; i++) {
-        V3 p = vp[i];
+        V3 p = place(i);
         if (mirror_y > -100) p.y = 2 * mirror_y - p.y;   /* the floor reflection */
         float zc = p.z - CAMZ;
         if (zc < 0.5f) zc = 0.5f;
@@ -362,13 +420,28 @@ void pixel3d_draw(float x, float y, float scale, float alpha, float mirror_y, Pi
         if (sy_[i] > y1) y1 = sy_[i];
     }
     if (box) { box->x0 = x0; box->y0 = y0; box->x1 = x1; box->y1 = y1; }
+    (void)frame_t;
     unsigned char a = to8(alpha);
-    /* in batches (a batch can hold 65535 vertices) */
-    for (int start = 0; start < ntris; start += 20000) {
-        int n = ntris - start < 20000 ? ntris - start : 20000;
+    /* the triangles to draw (the props only when wanted), in batches (a batch
+     * can hold 65535 vertices) */
+    static unsigned short list[MAXT];
+    int nl = 0;
+    /* triangles facing away are left out (every shape is closed, so they're
+     * hidden anyway): half the work for the GPU and the CPU */
+    float facing = mirror_y > -100 ? -CULL_SIGN : CULL_SIGN;
+    for (int k = 0; k < ntris; k++) {
+        if (!show_props && vgrp[tri[k][0]] != G_HEAD) continue;
+        int i0 = tri[k][0], i1 = tri[k][1], i2 = tri[k][2];
+        float area = (sx_[i1] - sx_[i0]) * (sy_[i2] - sy_[i0]) - (sy_[i1] - sy_[i0]) * (sx_[i2] - sx_[i0]);
+        if (area * facing < 0) continue;
+        list[nl++] = (unsigned short)k;
+    }
+    for (int start = 0; start < nl; start += 20000) {
+        int n = nl - start < 20000 ? nl - start : 20000;
         GX_Begin(GX_TRIANGLES, GX_VTXFMT1, (u16)(n * 3));
-        for (int k = start; k < start + n; k++)
+        for (int j = start; j < start + n; j++)
             for (int c = 0; c < 3; c++) {
+                int k = list[j];
                 int i = tri[k][c];
                 GX_Position3f32(sx_[i], sy_[i], sz_[i]);
                 GX_Color4u8(cr_[i], cg_[i], cb_[i], a);

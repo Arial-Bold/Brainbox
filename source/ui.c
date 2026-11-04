@@ -29,7 +29,7 @@
 
 /* ================================================================ settings */
 
-UiSettings ui_set = { UI_RES_AUTO, 0, 1, 0, 8, 4, 1, 0, "", { "", "", "" }, { "", "", "" }, 0, 1 };
+UiSettings ui_set = { UI_RES_AUTO, 0, 1, 0, 8, 4, 1, 0, "", { "", "", "" }, { "", "", "" }, 0, 1, 0 };
 static char settings_file[300];
 static const char *brain_ids[3] = { "gemini", "claude", "openai" };
 
@@ -64,6 +64,7 @@ void ui_settings_load(void) {
 		else if (!strcmp(line, "display.overscan")) ui_set.overscan = clampi(v, 0, UI_OVERSCAN_MAX);
 		else if (!strcmp(line, "display.depth_flip")) ui_set.depth_flip = v ? 1 : 0;
 		else if (!strcmp(line, "display.glow")) ui_set.glow = v ? 1 : 0;
+		else if (!strcmp(line, "display.fps")) ui_set.fps = v ? 1 : 0;
 		else if (!strcmp(line, "sound.voice")) ui_set.voice_volume = clampi(v, 0, UI_VOLUME_MAX);
 		else if (!strcmp(line, "sound.menu")) ui_set.sound_volume = clampi(v, 0, UI_VOLUME_MAX);
 		else if (!strcmp(line, "chat.captions")) ui_set.captions = v ? 1 : 0;
@@ -94,6 +95,7 @@ bool ui_settings_save(void) {
 		n += snprintf(out + n, sizeof(out) - n, "%s.key=%s\n%s.model=%s\n", brain_ids[i], ui_set.key[i], brain_ids[i], ui_set.model[i]);
 	if (ui_set.depth_flip) n += snprintf(out + n, sizeof(out) - n, "display.depth_flip=1\n");
 	if (!ui_set.glow) n += snprintf(out + n, sizeof(out) - n, "display.glow=0\n");
+	if (ui_set.fps) n += snprintf(out + n, sizeof(out) - n, "display.fps=1\n");
 	return storage_write_atomic(settings_file, out, (size_t)n);
 }
 
@@ -128,7 +130,7 @@ static struct {
 	char note_title[48], note[200];
 	unsigned char qr[177 * 177];
 	int qr_size;
-	char addr[64], sign_state[120];
+	char addr[64], sign_state[400];
 } sc;
 
 static mutex_t lock = LWP_MUTEX_NULL;
@@ -634,20 +636,21 @@ static void room(float cx) {
 	rect_v(fx, fy, fw, HORIZON - fy, rgba(7, 7, 18, 255), rgba(14, 12, 38, 255));
 	rect_v(fx, HORIZON, fw, fy + fh - HORIZON, rgba(10, 9, 30, 255), rgba(16, 13, 40, 255));
 	/* the floor: the apps' grid, in perspective */
-	Color line = rgba(46, 46, 110, 255);
-	for (int k = -14; k <= 14; k++) {   /* lines running away from us */
-		float x0 = cx + k * 26.0f, x1 = cx + k * 150.0f;
-		float y1 = fy + fh;
-		mode_color();
+	/* (lines at least two pixels thick, so they hold steady on the TV) */
+	Color line = rgba(52, 52, 120, 255);
+	float y1 = fy + fh;
+	mode_color();
+	for (int k = -10; k <= 10; k++) {   /* lines running away from us */
+		float x0 = cx + k * 30.0f, x1 = cx + k * 120.0f;
 		GX_Begin(GX_QUADS, GX_VTXFMT0, 4);
-		vtx(x0 - 0.5f, HORIZON, alpha(line, 0.15f), 0, 0); vtx(x0 + 0.5f, HORIZON, alpha(line, 0.15f), 0, 0);
-		vtx(x1 + 1.2f, y1, line, 0, 0); vtx(x1 - 1.2f, y1, line, 0, 0);
+		vtx(x0 - 1, HORIZON, alpha(line, 0), 0, 0); vtx(x0 + 1, HORIZON, alpha(line, 0), 0, 0);
+		vtx(x1 + 1.5f, y1, alpha(line, 0.8f), 0, 0); vtx(x1 - 1.5f, y1, alpha(line, 0.8f), 0, 0);
 		GX_End();
 	}
-	for (int k = 1; k < 9; k++) {   /* and across */
-		float y = HORIZON + (fy + fh - HORIZON) * (1.0f / (1 + (9 - k) * 0.55f));
-		float a = (y - HORIZON) / (fy + fh - HORIZON);
-		rect(fx, y, fw, 1 + a, alpha(line, 0.3f + 0.7f * a));
+	for (int k = 0; k < 6; k++) {   /* and across, further apart as they come nearer */
+		float d = 1.0f / (1 + (5 - k) * 0.9f);
+		float y = floorf(HORIZON + 6 + (y1 - HORIZON - 6) * d);
+		rect(fx, y, fw, 2, alpha(line, 0.15f + 0.6f * d));
 	}
 	/* the pedestal: a glowing ring on the floor */
 	float py = HORIZON + 30;
@@ -722,15 +725,15 @@ static void bloom(void) {
 	GX_SetTexCoordGen(GX_TEXCOORD0, GX_TG_MTX2x4, GX_TG_TEX0, GX_IDENTITY);
 	GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0);
 	/* (texture - a threshold) x 2: only what's bright comes through */
-	GX_SetTevColor(GX_TEVREG0, (GXColor){ 150, 150, 160, 255 });
+	GX_SetTevColor(GX_TEVREG0, (GXColor){ 190, 190, 200, 255 });
 	GX_SetTevColorIn(GX_TEVSTAGE0, GX_CC_C0, GX_CC_ZERO, GX_CC_ZERO, GX_CC_TEXC);
 	GX_SetTevColorOp(GX_TEVSTAGE0, GX_TEV_SUB, GX_TB_ZERO, GX_CS_SCALE_2, GX_TRUE, GX_TEVPREV);
 	GX_SetTevAlphaIn(GX_TEVSTAGE0, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_RASA);
 	GX_SetTevAlphaOp(GX_TEVSTAGE0, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
 	GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_ONE, GX_LO_CLEAR);
-	static const float offs[8][2] = { { -5, 0 }, { 5, 0 }, { 0, -5 }, { 0, 5 }, { -11, -4 }, { 11, 4 }, { -4, 11 }, { 4, -11 } };
-	for (int i = 0; i < 8; i++) {
-		Color c = rgba(255, 255, 255, i < 4 ? 70 : 40);
+	static const float offs[4][2] = { { -6, -2 }, { 6, 2 }, { -2, 6 }, { 2, -6 } };
+	for (int i = 0; i < 4; i++) {
+		Color c = rgba(255, 255, 255, 36);
 		float ox = offs[i][0], oy = offs[i][1];
 		GX_Begin(GX_QUADS, GX_VTXFMT0, 4);
 		vtx(vl + ox, vt + oy, c, 0, 0); vtx(vr + ox, vt + oy, c, 1, 0);
@@ -812,7 +815,8 @@ static void stage(void) {
 	/* hologram scanlines over him */
 	if (box.x1 > box.x0) {
 		mode_color();
-		for (float y = floorf(box.y0); y < box.y1; y += 3) rect(box.x0, y, box.x1 - box.x0, 1, rgba(4, 6, 30, 34));
+		float off = fmodf(t * 12, 4);
+		for (float y = floorf(box.y0) - 4 + off; y < box.y1; y += 4) rect(box.x0, y, box.x1 - box.x0, 2, rgba(6, 10, 40, 40));
 	}
 	sparkles(cx, t);
 	bloom();
@@ -825,12 +829,6 @@ static void stage(void) {
 			          rgba(200, 210, 235, (u8)(70 * fog_now)));
 		}
 	}
-	/* the title, top left */
-	rrect_v(18, 14, 204, 32, 8, rgba(10, 14, 30, 190), rgba(10, 14, 30, 190));
-	outline(18, 14, 204, 32, 8, 1, rgba(150, 140, 255, 110));
-	circle(36, 30, 8, rgba(120, 200, 255, 255));
-	text(36, 30, "?", 11, rgba(10, 20, 60, 255), 1, 0);
-	text(52, 30, "Ask Professor Pixel", 14, TEXT, 0, 0);
 }
 
 /* ------------------------------------------------------ the conversation */
@@ -862,14 +860,12 @@ static int wrap(const char *s, float size, float w, char out[][160], int max) {
 }
 
 static void bubble_frame(float x, float y, float w, float h, bool his) {
-	if (his) {
-		rrect_v(x, y, w, h, 12, rgba(42, 34, 140, 235), rgba(52, 40, 160, 235));
-		outline(x, y, w, h, 12, 1, rgba(175, 175, 255, 170));
-		tri(x, y + 30, x - 12, y + 40, x + 1, y + 46, rgba(42, 34, 140, 235));
-	} else {
-		rrect_v(x, y, w, h, 12, rgba(60, 70, 92, 220), rgba(50, 60, 80, 220));
-		outline(x, y, w, h, 12, 1, rgba(215, 225, 240, 150));
-	}
+	Color edge = his ? rgba(175, 175, 255, 220) : rgba(215, 225, 240, 200);
+	Color top = his ? rgba(42, 34, 140, 245) : rgba(60, 70, 92, 235), bot = his ? rgba(52, 40, 160, 245) : rgba(50, 60, 80, 235);
+	if (his) tri(x + 4, y + 26, x - 15, y + 40, x + 4, y + 50, edge);   /* the point's edge */
+	rrect_v(x - 2, y - 2, w + 4, h + 4, 14, edge, edge);                 /* the edge, 2 pixels */
+	rrect_v(x, y, w, h, 12, top, bot);
+	if (his) tri(x + 6, y + 29, x - 10, y + 40, x + 6, y + 47, top);     /* the point, over the edge */
 }
 
 static void chat(void) {
@@ -1017,9 +1013,11 @@ static void signin_panel(void) {
 	static char lines[12][160];
 	int n = wrap(steps, 11, w - qs - 54, lines, 12);
 	for (int i = 0; i < n; i++) text(qx + qs + 16, qy + 8 + i * 16, lines[i], 11, rgba(225, 230, 242, 255), 0, 0);
-	desc_bar(x + 16, y + h - 78, w - 32, 62);
-	text(x + 30, y + h - 60, sc.sign_state, 12, TEXT, 0, w - 60);
-	text(x + 30, y + h - 38, "Saved on the SD card. You never type a password here.", 10, rgba(205, 212, 235, 255), 0, w - 60);
+	desc_bar(x + 16, y + h - 92, w - 32, 76);
+	static char st[4][160];
+	int sn = wrap(sc.sign_state, 11, w - 60, st, 3);
+	for (int i = 0; i < sn; i++) text(x + 30, y + h - 78 + i * 15, st[i], 11, TEXT, 0, 0);
+	text(x + 30, y + h - 26, "Saved on the SD card. You never type a password here.", 10, rgba(205, 212, 235, 255), 0, w - 60);
 }
 
 static void overlay_panel(void) {
@@ -1103,6 +1101,15 @@ static void draw_frame(void) {
 	}
 	hints_row();
 	toast_draw();
+	if (ui_set.fps) {   /* frames drawn in the last second */
+		static u32 since, frames, shown;
+		u32 now = now_ms();
+		frames++;
+		if (now - since >= 1000) { shown = frames; frames = 0; since = now; }
+		char f[24];
+		snprintf(f, sizeof(f), "%u fps", (unsigned)shown);
+		text(24, 24, f, 12, GOLD, 0, 0);
+	}
 	U();
 }
 
