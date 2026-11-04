@@ -20,6 +20,7 @@ void ai_ask(const char *question);       /* starts asking (CP-1252 text) */
 bool ai_test(void);                      /* starts a quick check that the key works */
 AiState ai_state(void);
 const char *ai_answer(void);             /* when AI_DONE: the reply (CP-1252), or the problem when AI_FAILED */
+void ai_warm_up(void);                  /* the network and the clock, ready in the background (at start-up) */
 void ai_forget(void);                    /* a new conversation */
 const char *ai_model(void);              /* the model in use (it can change if the usual one has gone) */
 

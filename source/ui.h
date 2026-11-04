@@ -33,6 +33,7 @@ typedef struct {
 	int depth_flip;   /* (a fix-up, set by hand in pixel.ini if he ever looks inside out) */
 	int glow;         /* 1 = the glow round bright things (display.glow=0 in pixel.ini turns it off) */
 	int fps;          /* 1 = frames a second shown in the corner (display.fps=1 in pixel.ini) */
+	int intro;        /* 1 = the opening (him switching on) when BrainBox starts (display.intro=0 in pixel.ini: off) */
 } UiSettings;
 
 extern UiSettings ui_set;
@@ -80,6 +81,13 @@ void ui_status(const char *line1, const char *line2);
 #define UI_HINTS_MAX 5
 void ui_hints(const char *const *hints, int n);
 void ui_toast(const char *msg);   /* a message across the top that fades after a few seconds */
+
+/* the opening (him switching on as a hologram, with sound_play_holo): until
+ * it's started or skipped, nothing of him shows; the rest of the screen
+ * waits for it to finish */
+void ui_intro_start(void);
+void ui_intro_skip(void);
+bool ui_intro_done(void);
 
 /* panels over the stage */
 enum { UI_OVERLAY_NONE, UI_OVERLAY_LIST, UI_OVERLAY_BRAIN, UI_OVERLAY_SIGNIN };

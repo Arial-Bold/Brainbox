@@ -2,6 +2,7 @@
  * the DSP's hardware voices through libogc2's AESND library. From CubeBrowser,
  * by way of Flashcube. */
 #include "sound.h"
+#include "holosynth.h"
 #include "ui.h"
 #include "net/thr.h"
 #include <gccore.h>
@@ -42,8 +43,26 @@ static thr_t synth_th;
 static bool synth_started;
 static volatile bool synth_quit;
 
+/* the hologram switching on (the opening): made first, it's needed first */
+static s16 *holo_buf;
+static u32 holo_bytes;
+static AESNDPB *holo_voice;
+static void synth_holo(void) {
+	int n = holo_length();
+	u32 bytes = ((u32)n * 2 + 31) & ~31u;
+	s16 *buf = memalign(32, bytes);
+	if (!buf) return;
+	memset(buf, 0, bytes);
+	if (!holo_render(buf, n)) { free(buf); return; }
+	DCFlushRange(buf, bytes);
+	holo_bytes = bytes;
+	__sync_synchronize();
+	holo_buf = buf;
+}
+
 static void *synth_main(void *arg) {
 	(void)arg;
+	synth_holo();
 	for (unsigned k = 0; k < sizeof(synth_order) / sizeof(synth_order[0]) && !synth_quit; k++) synth(synth_order[k]);
 	return NULL;
 }
@@ -69,8 +88,10 @@ void sound_init(void) {
 	AESND_Init();
 	AESND_Pause(false);
 	for (int i = 0; i < SFX_VOICES; i++) sfx_voice[i] = AESND_AllocateVoice(sfx_cb);
+	holo_voice = AESND_AllocateVoice(sfx_cb);
 	ready = true;
 	synth_started = thr_create(&synth_th, synth_main, NULL, 32 * 1024, 60);
+	if (!synth_started) synth_holo();
 	if (!synth_started) for (unsigned k = 0; k < sizeof(synth_order) / sizeof(synth_order[0]); k++) synth(synth_order[k]);
 }
 
@@ -111,4 +132,13 @@ void sound_stop(Sfx s) {
 			AESND_SetVoiceStop(sfx_voice[i], true);
 			sfx_busy_until[i] = now;
 		}
+}
+
+bool sound_holo_ready(void) { return holo_buf != NULL; }
+
+void sound_play_holo(void) {
+	if (!ready || !holo_buf || !holo_voice || ui_set.voice_volume <= 0) return;
+	u16 vol = (u16)(ui_set.voice_volume * 255 / UI_VOLUME_MAX);   /* (as loud as his voice) */
+	AESND_SetVoiceVolume(holo_voice, vol, vol);
+	AESND_PlayVoice(holo_voice, VOICE_MONO16, holo_buf, holo_bytes, HOLO_RATE, 0, false);
 }

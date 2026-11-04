@@ -382,6 +382,22 @@ static bool start_with(void *(*fn)(void *)) {
 }
 static bool start(void) { return start_with(ask_main); }
 
+/* the network and the clock, made ready in the background while the
+ * opening plays (so the first question doesn't wait for them) */
+static void *warm_main(void *arg) {
+    (void)arg;
+    net_start();
+    while (net_state() == NET_STARTING) thr_sleep_ms(50);
+    if (net_state() == NET_UP) netio_sync_clock();
+    return NULL;
+}
+void ai_warm_up(void) {
+    static thr_t wt;
+    static bool started;
+    if (started) return;
+    started = thr_create(&wt, warm_main, NULL, 32 * 1024, 45);
+}
+
 void ai_ask(const char *q) {
     if (state == AI_BUSY) return;
     snprintf(question, sizeof(question), "%s", q);

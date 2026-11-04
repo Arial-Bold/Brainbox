@@ -24,12 +24,13 @@
 #include "ui.h"
 #include "ui_assets.h"
 #include "pixel3d.h"
+#include "holosynth.h"
 #include "speech.h"
 #include "net/storage.h"
 
 /* ================================================================ settings */
 
-UiSettings ui_set = { UI_RES_AUTO, 0, 1, 0, 8, 4, 1, 3 /* Groq */, "", { "", "", "", "" }, { "", "", "", "" }, 0, 1, 0 };
+UiSettings ui_set = { UI_RES_AUTO, 0, 1, 0, 8, 4, 1, 3 /* Groq */, "", { "", "", "", "" }, { "", "", "", "" }, 0, 1, 0, 1 };
 static char settings_file[300];
 static const char *brain_ids[UI_BRAINS] = { "gemini", "claude", "openai", "groq" };
 
@@ -65,6 +66,7 @@ void ui_settings_load(void) {
 		else if (!strcmp(line, "display.depth_flip")) ui_set.depth_flip = v ? 1 : 0;
 		else if (!strcmp(line, "display.glow")) ui_set.glow = v ? 1 : 0;
 		else if (!strcmp(line, "display.fps")) ui_set.fps = v ? 1 : 0;
+		else if (!strcmp(line, "display.intro")) ui_set.intro = v ? 1 : 0;
 		else if (!strcmp(line, "sound.voice")) ui_set.voice_volume = clampi(v, 0, UI_VOLUME_MAX);
 		else if (!strcmp(line, "sound.menu")) ui_set.sound_volume = clampi(v, 0, UI_VOLUME_MAX);
 		else if (!strcmp(line, "chat.captions")) ui_set.captions = v ? 1 : 0;
@@ -96,6 +98,7 @@ bool ui_settings_save(void) {
 	if (ui_set.depth_flip) n += snprintf(out + n, sizeof(out) - n, "display.depth_flip=1\n");
 	if (!ui_set.glow) n += snprintf(out + n, sizeof(out) - n, "display.glow=0\n");
 	if (ui_set.fps) n += snprintf(out + n, sizeof(out) - n, "display.fps=1\n");
+	if (!ui_set.intro) n += snprintf(out + n, sizeof(out) - n, "display.intro=0\n");
 	return storage_write_atomic(settings_file, out, (size_t)n);
 }
 
@@ -119,6 +122,8 @@ static struct {
 	int cap_kind;
 	char cap[160];
 	float listen;      /* the microphone's loudness, 0..1 */
+	int intro;         /* the opening: 0 none (or over), 1 waiting to start (nothing shown yet), 2 playing */
+	u32 intro_at;
 	float listen_shown;
 	char typing[400];
 	bool masked;
@@ -158,6 +163,9 @@ void ui_chuckle(void) { L(); sc.chuckle_at = now_ms(); U(); }
 void ui_fog(float a) { L(); sc.fog = a; U(); }
 void ui_caption(int kind, const char *t) { L(); sc.cap_kind = kind; cpy(sc.cap, t, sizeof(sc.cap)); U(); }
 void ui_listen_level(float lv) { sc.listen = lv; }
+void ui_intro_start(void) { L(); sc.intro_at = now_ms(); sc.intro = 2; U(); }
+void ui_intro_skip(void) { L(); sc.intro = 0; U(); }
+bool ui_intro_done(void) { return sc.intro == 0 || (sc.intro == 2 && now_ms() - sc.intro_at > 1500); }
 void ui_typing(const char *t, bool masked) { L(); cpy(sc.typing, t, sizeof(sc.typing)); sc.masked = masked; U(); }
 void ui_chat(const char *you, const char *him) { L(); cpy(sc.you, you, sizeof(sc.you)); cpy(sc.him, him, sizeof(sc.him)); sc.him_scroll = 0; U(); }
 void ui_chat_scroll(int lines) {
@@ -724,12 +732,13 @@ static void soft_ring(float cx, float cy, float rx, float ry, float w, Color c) 
 
 /* the ring on the floor: a soft glow, and a bright line through it whose
  * edges fade out (so it's smooth, not stepped, on the TV) */
-static void pedestal_ring(float cx) {
+static void pedestal_ring(float cx, float k) {
 	float py = HORIZON + 30;
+	if (k <= 0) return;
 	mode_color();
 	GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_ONE, GX_LO_CLEAR);
-	soft_ring(cx, py, 125, 17, 12, rgba(80, 140, 255, 70));     /* the glow */
-	soft_ring(cx, py, 125, 17, 3.2f, rgba(200, 230, 255, 235)); /* the line */
+	soft_ring(cx, py, 125, 17, 12, rgba(80, 140, 255, (u8)(70 * k)));     /* the glow */
+	soft_ring(cx, py, 125, 17, 3.2f, rgba(200, 230, 255, (u8)(235 * k))); /* the line */
 	GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
 }
 
@@ -776,7 +785,7 @@ static void beam(float cx, float top, float k) {
 }
 
 /* sparkles drifting up the beam */
-static void sparkles(float cx, float t) {
+static void sparkles(float cx, float t, float k) {
 	mode_color();
 	GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_ONE, GX_LO_CLEAR);
 	unsigned seed = 7;
@@ -790,7 +799,7 @@ static void sparkles(float cx, float t) {
 		float x = cx + (r2 * 2 - 1) * spread + sinf(t * 0.7f + i) * 4;
 		float a = 0.3f + 0.6f * r3;
 		a *= clamp01((HORIZON - y) / 40) * clamp01((y - 40) / 60);
-		soft_blob(x, y, 2.6f, 2.6f, rgba(150, 215, 255, (u8)(255 * a)));
+		soft_blob(x, y, 2.6f, 2.6f, rgba(150, 215, 255, (u8)(255 * a * k)));
 	}
 	GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
 }
@@ -879,9 +888,19 @@ static void pose_update(float t) {
 static void frame_setup(void);
 static void head_pass(float x, float alpha_k, float mirror, PixelBox *box) {
 	/* 3D, on the GPU (see pixel3d.c), then back to drawing in 2D */
+	if (alpha_k <= 0) { if (box) box->x0 = box->x1 = box->y0 = box->y1 = 0; return; }
 	pixel3d_view(vl, vt, vr, vb, ui_set.depth_flip);
 	pixel3d_draw(x, 240, 1, alpha_k, mirror, box);
 	frame_setup();
+}
+
+/* only the part of the screen below layout height y (and above y_end) is drawn */
+static void clip_rows(float y, float y_end) {
+	float a = (y - vt) / (vb - vt) * rmode->efbHeight, b = (y_end - vt) / (vb - vt) * rmode->efbHeight;
+	if (a < 0) a = 0;
+	if (b > rmode->efbHeight) b = rmode->efbHeight;
+	if (b <= a) b = a + 1;
+	GX_SetScissor(0, (u32)a, rmode->fbWidth, (u32)(b - a));
 }
 
 /* A line of the hologram's scanlines at depth: the depth test decides where
@@ -918,29 +937,111 @@ static void scanlines(float cx, float top, float t) {
 	GX_SetZMode(GX_FALSE, GX_ALWAYS, GX_FALSE);
 }
 
+/* The opening, timed to its sound (holosynth.c): the beam stutters on and
+ * off, and he flickers in it, faint and jumpy; then as the sound zips up a
+ * bright line sweeps up from his bow tie to the top of his head, leaving him
+ * behind it; on the first chime he's there, with a glow and a burst of
+ * sparkles. */
+typedef struct { float beam, head, ghost, sweep, glow, sparkle, jitter; bool sweeping; } Intro;
+static Intro intro_now(void) {
+	Intro in = { 1, 1, 0, 0, 0, 1, 0, false };
+	if (sc.intro == 1) { in.beam = in.head = in.sparkle = 0; return in; }
+	if (sc.intro != 2) return in;
+	float ti = (now_ms() - sc.intro_at) / 1000.0f;
+	if (ti >= 1.5f) { sc.intro = 0; return in; }
+	float g = holo_gate(ti);
+	if (ti < HOLO_LOCK) {
+		/* the stutter: the beam on and off with the buzz, him a faint, jumpy flicker */
+		in.beam = g * (0.45f + 0.4f * ti / HOLO_LOCK);
+		in.head = 0;
+		in.ghost = g * 0.6f;
+		in.jitter = g;
+		in.sparkle = 0;
+	} else if (ti < HOLO_SET) {
+		/* the sweep up as it locks in */
+		float p = (ti - HOLO_LOCK) / (HOLO_SET - HOLO_LOCK);
+		in.beam = 0.85f + 0.15f * p;
+		in.sweep = p;
+		in.sweeping = true;
+		in.ghost = 0.3f;
+		in.sparkle = p * 0.4f;
+	} else {
+		/* there: a glow that fades, the sparkles back */
+		float q = (ti - HOLO_SET) / (1.5f - HOLO_SET);
+		in.glow = 1 - q;
+		in.sparkle = 0.4f + 0.6f * q;
+	}
+	return in;
+}
+
 static void stage(void) {
 	float t = now_ms() / 1000.0f;
 	pose_update(t);
+	Intro in = intro_now();
 	float cx = px_now;
 	room(cx);
 	pixel3d_build(&pose);
+	/* where his head is, top to bottom (for the sweep), from the last frame */
+	static PixelBox last_box = { 200, 95, 440, 345 };
+	float head_top = last_box.y0 - 6, head_bot = last_box.y1 + 6;
+	float sweep_y = head_bot + (head_top - head_bot) * (in.sweep * in.sweep * (3 - 2 * in.sweep));
+	float jx = in.jitter > 0 ? (float)((int)(now_ms() / 33 * 7919 % 13) - 6) : 0;   /* (a jump every frame or two) */
 	/* his reflection on the floor (only below the horizon) */
 	{
-		float y_px = (HORIZON - vt) / (vb - vt) * rmode->efbHeight;
-		if (y_px < 0) y_px = 0;
-		GX_SetScissor(0, (u32)y_px, rmode->fbWidth, rmode->efbHeight - (u32)y_px);
-		head_pass(cx, 0.16f, -0.95f, NULL);
+		float refl = in.head > 0 || in.sweeping ? 0.16f : 0.16f * in.ghost * 2.5f;
+		clip_rows(HORIZON, 99999);
+		head_pass(cx + jx, refl, -0.95f, NULL);
 		GX_SetScissor(0, 0, rmode->fbWidth, rmode->efbHeight);
 	}
-	beam(cx, 60, 1);
-	PixelBox box;
-	head_pass(cx, 1, -1000, &box);
+	beam(cx, 60, in.beam);
+	PixelBox box = { 0, 0, 0, 0 };
+	if (in.sweeping) {
+		/* below the line: him; above it: only his faint outline */
+		clip_rows(sweep_y, 99999);
+		head_pass(cx, 1, -1000, &box);
+		clip_rows(-99999, sweep_y);
+		GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_ONE, GX_LO_CLEAR);   /* (light added: a glowing outline) */
+		pixel3d_tint(110, 190, 255);
+		head_pass(cx, in.ghost, -1000, NULL);
+		pixel3d_tint(255, 255, 255);
+		GX_SetScissor(0, 0, rmode->fbWidth, rmode->efbHeight);
+	} else if (in.head > 0) {
+		head_pass(cx, in.head, -1000, &box);
+	} else if (in.ghost > 0) {
+		/* the flicker: faint, jumping sideways, in a few slices */
+		for (int k = 0; k < 3; k++) {
+			float y0 = head_top + (head_bot - head_top) * k / 3, y1 = head_top + (head_bot - head_top) * (k + 1) / 3;
+			float sx = (float)((int)((now_ms() / 33 + k * 5) * 104729 % 11) - 5) * in.jitter;
+			clip_rows(y0, y1);
+			GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_ONE, GX_LO_CLEAR);   /* (light added: a glowing flicker) */
+			pixel3d_tint(110, 190, 255);
+			head_pass(cx + sx, in.ghost, -1000, NULL);
+			pixel3d_tint(255, 255, 255);
+		}
+		GX_SetScissor(0, 0, rmode->fbWidth, rmode->efbHeight);
+	}
+	if (box.x1 > box.x0) last_box = box;
 	/* hologram scanlines: over him and his props (and his reflection) exactly,
 	 * using the depth he left behind, and over the beam around him */
-	(void)box;
-	scanlines(cx, 60, t);
-	pedestal_ring(cx);
-	sparkles(cx, t);
+	if (in.beam > 0) scanlines(cx, 60, t);
+	pedestal_ring(cx, in.beam);
+	/* the bright line of the sweep, and the glow as he arrives */
+	if (in.sweeping) {
+		mode_color();
+		GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_ONE, GX_LO_CLEAR);
+		float hw = (last_box.x1 - last_box.x0) * 0.62f;
+		soft_blob(cx, sweep_y, hw, 7, rgba(150, 215, 255, 200));
+		soft_blob(cx, sweep_y, hw * 0.8f, 2.2f, rgba(230, 245, 255, 255));
+		GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
+	}
+	if (in.glow > 0) {
+		mode_color();
+		GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_ONE, GX_LO_CLEAR);
+		float k = in.glow * in.glow;
+		soft_blob(cx, (head_top + head_bot) / 2, (last_box.x1 - last_box.x0) * 0.75f, (head_bot - head_top) * 0.65f, rgba(110, 170, 255, (u8)(110 * k)));
+		GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
+	}
+	sparkles(cx, t, in.sparkle);
 	bloom();
 	/* fog round his head (the foggy-headed greeting) */
 	if (fog_now > 0.01f) {
@@ -1233,6 +1334,8 @@ static void draw_frame(void) {
 	frame_setup();
 	L();
 	stage();
+	bool opening = sc.intro != 0;
+	if (!opening) {
 	chat();
 	caption();
 	overlay_panel();
@@ -1242,6 +1345,7 @@ static void draw_frame(void) {
 	}
 	hints_row();
 	toast_draw();
+	}
 	if (ui_set.fps) {   /* frames drawn in the last second */
 		static u32 since, frames, shown;
 		u32 now = now_ms();
@@ -1283,6 +1387,7 @@ static void *video_main(void *arg) {
 }
 
 void ui_init(void) {
+	sc.intro = 1;   /* nothing of him until the opening starts (or is skipped) */
 	VIDEO_Init();
 	PAD_Init();
 	LWP_MutexInit(&lock, false);

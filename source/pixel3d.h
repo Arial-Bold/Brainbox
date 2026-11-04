@@ -30,3 +30,5 @@ void pixel3d_view(float l, float t, float r, float b, bool depth_flip);
  * caller sets its own back up afterwards. */
 void pixel3d_draw(float x, float y, float scale, float alpha, float mirror_y, PixelBox *box);
 int  pixel3d_triangles(void);
+/* his colours are multiplied by this when drawn (white: as they are; a pale blue for a ghostly hologram) */
+void pixel3d_tint(u8 r, u8 g, u8 b);

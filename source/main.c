@@ -710,13 +710,24 @@ int main(int argc, char **argv) {
 		ui_settings_load();
 	}
 	use_brain();
+	ai_warm_up();   /* the network and the clock, while he switches on */
 	ui_layout(0);
 	ui_pose(0, 0, true);
-	ui_caption(UI_CAP_INFO, "Warming up\x85");
 	hints(0);
-	/* his voice starts in the background (a second or so) */
-	for (int k = 0; k < 600 && !speech_ready(); k++) read_input();
-	ui_caption(UI_CAP_NONE, "");
+	/* the opening: he switches on as a hologram, to its sound (which is made
+	 * first thing, in the background: a moment) */
+	if (ui_set.intro) {
+		for (int k = 0; k < 90 && !sound_holo_ready(); k++) read_input();
+		ui_intro_start();
+		sound_play_holo();
+		while (!ui_intro_done()) read_input();
+	} else ui_intro_skip();
+	/* his voice starts in the background too (a second or so: usually ready by now) */
+	if (!speech_ready()) {
+		ui_caption(UI_CAP_INFO, "Warming up\x85");
+		for (int k = 0; k < 600 && !speech_ready(); k++) read_input();
+		ui_caption(UI_CAP_NONE, "");
+	}
 	if (!storage_ok()) ui_toast("There's no SD card: settings won't be kept.");
 
 	if (!ui_set.key[ui_set.brain][0]) {

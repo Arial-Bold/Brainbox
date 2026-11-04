@@ -10,3 +10,6 @@ void sound_play(Sfx s);
 bool sound_loaded(Sfx s);
 void sound_stop(Sfx s);      /* stops it if it's still playing */
 void sound_shutdown(void);   /* before launching another program */
+/* the hologram switching on (the opening, see holosynth.c) */
+bool sound_holo_ready(void);
+void sound_play_holo(void);
