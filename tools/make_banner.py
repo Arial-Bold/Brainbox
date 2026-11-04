@@ -78,7 +78,7 @@ def banner_image():
     lmask = Image.new('L', (W, H), 0)
     lmask.paste(a, (hx, hy))
     img.paste(lines, (0, 0), Image.composite(lines, Image.new('RGBA', (W, H)), lmask).split()[3])
-    # the name: BRAINBOX big, and who's in it small underneath, in the apps' colours
+    # the name, in the apps' colours
     x0 = int(W * 0.40)
     def word(text, size, colour, y, spacing=0):
         f = ImageFont.truetype(FONT, size)
@@ -90,9 +90,7 @@ def banner_image():
             td.text((x, y), ch, font=f, fill=colour)
             x += f.getlength(ch) + spacing
         return t, x
-    t2, xe = word('BRAINBOX', int(11.2 * S), (236, 235, 255, 255), int(3.0 * S), spacing=int(0.1 * S))
-    t1, _ = word('PROF. SCOTTY', int(5.6 * S), (140, 220, 255, 255), int(17.5 * S), spacing=int(0.7 * S))
-    img = Image.alpha_composite(img, t1)
+    t2, xe = word('BRAINBOX', int(11.2 * S), (236, 235, 255, 255), int(7.5 * S), spacing=int(0.1 * S))
     # (a soft blue glow behind the big word)
     g2 = t2.filter(ImageFilter.GaussianBlur(1.5 * S))
     img = Image.alpha_composite(img, Image.fromarray((np.array(g2) * [0.45, 0.7, 1.0, 0.9]).astype(np.uint8), 'RGBA'))
