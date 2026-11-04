@@ -34,11 +34,11 @@ static char answer[ANSWER_MAX], question[1200];
 static thr_t th;
 static bool testing;
 
-static const char *names[AI_COUNT] = { "Google Gemini", "Claude", "ChatGPT" };
-static const char *ids[AI_COUNT] = { "gemini", "claude", "openai" };
+static const char *names[AI_COUNT] = { "Google Gemini", "Claude", "ChatGPT", "Groq" };
+static const char *ids[AI_COUNT] = { "gemini", "claude", "openai", "groq" };
 static const char *pages[AI_COUNT] = { "https://aistudio.google.com/apikey", "https://console.anthropic.com/settings/keys",
-                                       "https://platform.openai.com/api-keys" };
-static const char *models[AI_COUNT] = { "gemini-flash-latest", "claude-haiku-5-5", "gpt-5-mini" };
+                                       "https://platform.openai.com/api-keys", "https://console.groq.com/keys" };
+static const char *models[AI_COUNT] = { "gemini-flash-latest", "claude-haiku-5-5", "gpt-5-mini", "llama-3.3-70b-versatile" };
 
 const char *ai_name(AiBrain b) { return b < AI_COUNT ? names[b] : ""; }
 const char *ai_key_page(AiBrain b) { return b < AI_COUNT ? pages[b] : ""; }
@@ -126,8 +126,8 @@ static const char *build(Buf *b_, char *url, size_t ucap, char *headers, size_t 
         buf_add(&b, "]}");
         path = "content.0.text";
         break;
-    default:
-        snprintf(url, ucap, "https://api.openai.com/v1/chat/completions");
+    default:   /* ChatGPT, and Groq (which works the same way) */
+        snprintf(url, ucap, brain == AI_GROQ ? "https://api.groq.com/openai/v1/chat/completions" : "https://api.openai.com/v1/chat/completions");
         snprintf(headers, hcap, "Authorization: Bearer %s\r\n", key);
         buf_addf(&b, "{\"model\":\"%s\",\"max_completion_tokens\":2048,\"messages\":[{\"role\":\"system\",\"content\":", use_model);
         buf_add_json_string(&b, SYSTEM);
@@ -146,7 +146,8 @@ static int candidates(const char **out) {
     static const char *more[AI_COUNT][3] = {
         { "gemini-2.5-flash", "gemini-3.1-flash-lite", "gemini-2.5-flash-lite" },
         { "claude-sonnet-5-5", "claude-haiku-4-5", "claude-sonnet-4-5" },
-        { "gpt-4.1-mini", "gpt-4o-mini", "gpt-5-nano" } };
+        { "gpt-4.1-mini", "gpt-4o-mini", "gpt-5-nano" },
+        { "openai/gpt-oss-120b", "llama-3.1-8b-instant", "openai/gpt-oss-20b" } };
     int n = 0;
     out[n++] = model;
     for (int i = 0; i < 3; i++) if (strcmp(more[brain][i], model)) out[n++] = more[brain][i];
@@ -285,6 +286,10 @@ static bool transcribe(void) {
         try_models[nm++] = ear_model[0] ? ear_model : models[AI_GEMINI];
         for (int i = 0; i < 3; i++) if (strcmp(try_models[0], more[i])) try_models[nm++] = more[i];
         path = "candidates.0.content.parts.0.text";
+    } else if (ear == AI_GROQ) {
+        try_models[nm++] = "whisper-large-v3-turbo";
+        try_models[nm++] = "whisper-large-v3";
+        path = "text";
     } else {
         try_models[nm++] = "gpt-4o-mini-transcribe";
         try_models[nm++] = "whisper-1";
@@ -302,7 +307,7 @@ static bool transcribe(void) {
             add_wav(&b, true);
             buf_addf(&b, "\"}}]}],\"generationConfig\":{\"maxOutputTokens\":400%s}}", gemini_quick ? QUICK : "");
         } else {
-            snprintf(url, sizeof(url), "https://api.openai.com/v1/audio/transcriptions");
+            snprintf(url, sizeof(url), ear == AI_GROQ ? "https://api.groq.com/openai/v1/audio/transcriptions" : "https://api.openai.com/v1/audio/transcriptions");
             snprintf(headers, sizeof(headers), "Content-Type: multipart/form-data; boundary=%s\r\nAuthorization: Bearer %s\r\n", BOUNDARY, ear_key);
             buf_addf(&b, "--%s\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n%s\r\n", BOUNDARY, try_models[mi]);
             buf_addf(&b, "--%s\r\nContent-Disposition: form-data; name=\"language\"\r\n\r\nen\r\n", BOUNDARY);
@@ -407,4 +412,4 @@ void ai_hear(const short *pcm, int n, int rate, AiBrain e, const char *k, const 
 }
 const char *ai_heard(void) { return heard_ready ? heard : NULL; }
 bool ai_heard_nothing(void) { return heard_nothing; }
-bool ai_can_hear(AiBrain b) { return b == AI_GEMINI || b == AI_OPENAI; }
+bool ai_can_hear(AiBrain b) { return b == AI_GEMINI || b == AI_OPENAI || b == AI_GROQ; }

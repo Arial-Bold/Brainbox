@@ -16,6 +16,7 @@ enum { UI_RES_AUTO, UI_RES_480I, UI_RES_480P, UI_RES_COUNT };
 #define UI_OVERSCAN_MAX 10
 #define UI_VOLUME_MAX 10
 #define UI_KEY_MAX 200
+#define UI_BRAINS 4       /* (AI_COUNT) */
 
 typedef struct {
 	int resolution;   /* UI_RES_* */
@@ -27,8 +28,8 @@ typedef struct {
 	int captions;     /* 1 = his words show in a bubble as he speaks */
 	int brain;        /* AiBrain: which AI he uses */
 	char launcher[64];/* the .dol at the root of the SD card that Exit starts ("" = find one) */
-	char key[3][UI_KEY_MAX];  /* the API key for each AI ("" = none yet) */
-	char model[3][80];        /* the model for each AI ("" = the usual one) */
+	char key[UI_BRAINS][UI_KEY_MAX];  /* the API key for each AI ("" = none yet) */
+	char model[UI_BRAINS][80];        /* the model for each AI ("" = the usual one) */
 	int depth_flip;   /* (a fix-up, set by hand in pixel.ini if he ever looks inside out) */
 	int glow;         /* 1 = the glow round bright things (display.glow=0 in pixel.ini turns it off) */
 	int fps;          /* 1 = frames a second shown in the corner (display.fps=1 in pixel.ini) */

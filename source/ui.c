@@ -29,9 +29,9 @@
 
 /* ================================================================ settings */
 
-UiSettings ui_set = { UI_RES_AUTO, 0, 1, 0, 8, 4, 1, 0, "", { "", "", "" }, { "", "", "" }, 0, 1, 0 };
+UiSettings ui_set = { UI_RES_AUTO, 0, 1, 0, 8, 4, 1, 3 /* Groq */, "", { "", "", "", "" }, { "", "", "", "" }, 0, 1, 0 };
 static char settings_file[300];
-static const char *brain_ids[3] = { "gemini", "claude", "openai" };
+static const char *brain_ids[UI_BRAINS] = { "gemini", "claude", "openai", "groq" };
 
 void ui_settings_path(const char *path) { snprintf(settings_file, sizeof(settings_file), "%s", path); }
 
@@ -69,8 +69,8 @@ void ui_settings_load(void) {
 		else if (!strcmp(line, "sound.menu")) ui_set.sound_volume = clampi(v, 0, UI_VOLUME_MAX);
 		else if (!strcmp(line, "chat.captions")) ui_set.captions = v ? 1 : 0;
 		else if (!strcmp(line, "exit.launcher")) snprintf(ui_set.launcher, sizeof(ui_set.launcher), "%s", val);
-		else if (!strcmp(line, "brain")) { for (int i = 0; i < 3; i++) if (!strcmp(val, brain_ids[i])) ui_set.brain = i; }
-		else for (int i = 0; i < 3; i++) {
+		else if (!strcmp(line, "brain")) { for (int i = 0; i < UI_BRAINS; i++) if (!strcmp(val, brain_ids[i])) ui_set.brain = i; }
+		else for (int i = 0; i < UI_BRAINS; i++) {
 			char k[40];
 			snprintf(k, sizeof(k), "%s.key", brain_ids[i]);
 			if (!strcmp(line, k)) snprintf(ui_set.key[i], UI_KEY_MAX, "%s", val);
@@ -90,8 +90,8 @@ bool ui_settings_save(void) {
 		"display.resolution=%d\ndisplay.widescreen=%d\ndisplay.full_width=%d\ndisplay.overscan=%d\n"
 		"sound.voice=%d\nsound.menu=%d\nchat.captions=%d\nbrain=%s\nexit.launcher=%s\n",
 		ui_set.resolution, ui_set.widescreen, ui_set.full_width, ui_set.overscan,
-		ui_set.voice_volume, ui_set.sound_volume, ui_set.captions, brain_ids[clampi(ui_set.brain, 0, 2)], ui_set.launcher);
-	for (int i = 0; i < 3; i++)
+		ui_set.voice_volume, ui_set.sound_volume, ui_set.captions, brain_ids[clampi(ui_set.brain, 0, UI_BRAINS - 1)], ui_set.launcher);
+	for (int i = 0; i < UI_BRAINS; i++)
 		n += snprintf(out + n, sizeof(out) - n, "%s.key=%s\n%s.model=%s\n", brain_ids[i], ui_set.key[i], brain_ids[i], ui_set.model[i]);
 	if (ui_set.depth_flip) n += snprintf(out + n, sizeof(out) - n, "display.depth_flip=1\n");
 	if (!ui_set.glow) n += snprintf(out + n, sizeof(out) - n, "display.glow=0\n");
@@ -1022,30 +1022,31 @@ static void list_panel(void) {
 
 /* choosing an AI: a name, a line under it, a tag at the right; a note below */
 static void brain_panel(void) {
-	float x = 250, y = 66, w = 372, h = 338;
+	float x = 250, y = 62, w = 372, h = 350;
 	panel(x, y, w, h);
 	text(x + 16, y + 18, sc.overlay_title, 13, TITLE, 0, w - 32);
 	rule(x + 12, y + 32, w - 24);
+	const float pitch = 53, ch = 46;
 	for (int i = 0; i < sc.orow_count; i++) {
-		float ry = y + 46 + i * 62, rx = x + 16, rw = w - 32;
-		frost(rx, ry, rw, 52);
-		text(rx + 14, ry + 18, sc.orows[i].label, 14, TEXT, 0, 200);
-		if (sc.orows[i].value[0] != 1) text(rx + 14, ry + 36, sc.orows[i].value, 10, SOFT, 0, rw - 28);
+		float ry = y + 44 + i * pitch, rx = x + 16, rw = w - 32;
+		frost(rx, ry, rw, ch);
+		text(rx + 14, ry + 16, sc.orows[i].label, 14, TEXT, 0, 200);
+		if (sc.orows[i].value[0] != 1) text(rx + 14, ry + 33, sc.orows[i].value, 10, SOFT, 0, rw - 28);
 		if (sc.orows[i].tag[0]) {
 			float tw = text_width(sc.orows[i].tag, 9) + 14;
 			rrect_v(rx + rw - 10 - tw, ry + 10, tw, 16, 8, sc.orows[i].gold ? GOLD : rgba(60, 66, 80, 230),
 			        sc.orows[i].gold ? rgba(216, 176, 48, 255) : rgba(60, 66, 80, 230));
 			text(rx + rw - 10 - tw / 2, ry + 18, sc.orows[i].tag, 9, sc.orows[i].gold ? rgba(40, 30, 8, 255) : rgba(220, 225, 235, 255), 1, 0);
 		}
-		if (i == sc.osel) gold_ring(rx, ry, rw, 52);
+		if (i == sc.osel) gold_ring(rx, ry, rw, ch);
 	}
 	if (sc.note_title[0]) {
-		float ny = y + 46 + sc.orow_count * 62 + 6, nh = y + h - 14 - ny;
+		float ny = y + 44 + sc.orow_count * pitch + 4, nh = y + h - 12 - ny;
 		desc_bar(x + 16, ny, w - 32, nh);
 		text(x + 30, ny + 16, sc.note_title, 12, TEXT, 0, w - 60);
 		static char lines[6][160];
-		int n = wrap(sc.note, 11, w - 60, lines, 4);
-		for (int i = 0; i < n; i++) text(x + 30, ny + 34 + i * 16, lines[i], 11, rgba(205, 212, 235, 255), 0, 0);
+		int n = wrap(sc.note, 11, w - 60, lines, 3);
+		for (int i = 0; i < n; i++) text(x + 30, ny + 32 + i * 15, lines[i], 11, rgba(205, 212, 235, 255), 0, 0);
 	}
 }
 

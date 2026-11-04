@@ -1,6 +1,6 @@
 /* main.c - Professor Pixel: a hologram professor on the GameCube who answers
  * your questions with the AI of your choice (Google Gemini, Claude or
- * ChatGPT) and speaks his answers aloud.
+ * ChatGPT, or open models on Groq) and speaks his answers aloud.
  *
  * The main thread runs the conversation, reads the controller and the
  * keyboard, and tells the drawing thread (ui.c) what to show. */
@@ -252,41 +252,49 @@ static bool sign_in(int b) {
 
 /* Choosing an AI, then signing in to it. True once he has a brain. */
 static bool choose_brain(void) {
-	static const char *subs[3] = { "Google account and an API key", "Anthropic account and an API key", "OpenAI account and an API key" };
-	static const char *notes[3] = {
-		"Has a free allowance with daily limits. You'll make a key on your phone or computer and send it to the GameCube.",
+	/* the order they're listed in: the free ones first */
+	static const AiBrain order[AI_COUNT] = { AI_GROQ, AI_GEMINI, AI_CLAUDE, AI_OPENAI };
+	static const char *subs[AI_COUNT] = { "Google account and an API key", "Anthropic account and an API key",
+	                                      "OpenAI account and an API key", "Open models (Llama), a Groq account and a key" };
+	static const char *notes[AI_COUNT] = {
+		"A free allowance with daily limits. Make a key on your phone or computer and send it to the GameCube.",
+		"Pay as you go: a short chat costs a fraction of a cent. Claude can't listen: typing only, or add Groq too.",
 		"Pay as you go: a short chat costs a fraction of a cent. Make a key on your phone or computer and send it here.",
-		"Pay as you go: a short chat costs a fraction of a cent. Make a key on your phone or computer and send it here." };
-	int row = ui_set.brain;
+		"Free, and very quick. Open models that hear you and answer. Make a key on your phone or computer and send it here." };
+	int row = 0;
+	for (int i = 0; i < AI_COUNT; i++) if (order[i] == ui_set.brain) row = i;
 	for (;;) {
 		ui_overlay(UI_OVERLAY_BRAIN, "Which AI should Professor Pixel use?");
-		for (int i = 0; i < 3; i++) {
-			ui_overlay_row(i, ai_name((AiBrain)i), subs[i]);
-			ui_overlay_tag(i, ui_set.key[i][0] ? "Signed in" : i == 0 ? "Free tier" : "Pay as you go", i == 0 || ui_set.key[i][0]);
+		for (int i = 0; i < AI_COUNT; i++) {
+			AiBrain b = order[i];
+			bool free_ = b == AI_GROQ || b == AI_GEMINI;
+			ui_overlay_row(i, ai_name(b), subs[b]);
+			ui_overlay_tag(i, ui_set.key[b][0] ? "Signed in" : free_ ? "Free tier" : "Pay as you go", free_ || ui_set.key[b][0]);
 		}
-		ui_overlay_rows(3);
+		ui_overlay_rows(AI_COUNT);
 		ui_overlay_select(row);
-		ui_overlay_note(ai_name((AiBrain)row), notes[row]);
+		ui_overlay_note(ai_name(order[row]), notes[order[row]]);
 		hints(3, "S:Move", "A:Choose", "B:Back");
 		for (;;) {
 			read_input();
 			if (down & (PAD_BUTTON_UP | PAD_BUTTON_DOWN)) {
-				row = (row + ((down & PAD_BUTTON_UP) ? 2 : 1)) % 3;
+				row = (row + ((down & PAD_BUTTON_UP) ? AI_COUNT - 1 : 1)) % AI_COUNT;
 				ui_overlay_select(row);
-				ui_overlay_note(ai_name((AiBrain)row), notes[row]);
+				ui_overlay_note(ai_name(order[row]), notes[order[row]]);
 			}
 			if (down & PAD_BUTTON_B) { ui_overlay(UI_OVERLAY_NONE, ""); return ui_set.key[ui_set.brain][0] != 0; }
 			if (down & PAD_BUTTON_A) break;
 		}
-		if (ui_set.key[row][0]) {   /* already signed in: just switch */
-			ui_set.brain = row;
+		int b = order[row];
+		if (ui_set.key[b][0]) {   /* already signed in: just switch */
+			ui_set.brain = b;
 			use_brain();
 			save_settings();
 			ui_overlay(UI_OVERLAY_NONE, "");
 			return true;
 		}
 		wait_release();
-		if (sign_in(row)) return true;
+		if (sign_in(b)) return true;
 	}
 }
 
@@ -324,7 +332,7 @@ static void settings_help(int row) {
 		{ "Voice volume", "How loud Professor Pixel speaks. Off for none." },
 		{ "Menu sounds", "How loud the sounds are when you move and choose. Off for none." },
 		{ "Captions", "Shows his answers in a bubble as he speaks." },
-		{ "Brain", "Which AI he uses: Google Gemini, Claude or ChatGPT. A to change or sign in." },
+		{ "Brain", "Which AI he uses: Groq, Google Gemini, Claude or ChatGPT. A to change or sign in." },
 		{ "Launcher", "The program at the root of the SD card that Exit to Launcher starts." },
 		{ "Exit to Launcher", "Leaves Professor Pixel." },
 	};
@@ -498,9 +506,11 @@ static void ask(const char *q) {
 	answered(q);
 }
 
-/* the AI that writes down what's said (Claude can't hear: Gemini or ChatGPT does it, if signed in) */
+/* the AI that writes down what's said: Groq if it's signed in (quick and
+ * free), or the brain in use if it can hear, or another that can (Claude can't) */
 static bool pick_ear(AiBrain *e) {
 	int b = ui_set.brain;
+	if (ui_set.key[AI_GROQ][0]) { *e = AI_GROQ; return true; }
 	if (ai_can_hear((AiBrain)b) && ui_set.key[b][0]) { *e = (AiBrain)b; return true; }
 	if (ui_set.key[AI_GEMINI][0]) { *e = AI_GEMINI; return true; }
 	if (ui_set.key[AI_OPENAI][0]) { *e = AI_OPENAI; return true; }
@@ -530,7 +540,7 @@ static void listen_and_ask(void) {
 	AiBrain ear;
 	if (!pick_ear(&ear)) {
 		wait_release();
-		say("", "Oh dear, Claude can't hear through the microphone. But Google Gemini or ChatGPT can listen for me! "
+		say("", "Oh dear, Claude can't hear through the microphone. But Groq, Google Gemini or ChatGPT can listen for me! "
 		        "Sign one of them in under Brain in Settings, then switch back to Claude. Or just type your question.");
 		return;
 	}

@@ -1,16 +1,16 @@
 /* ai.h - Professor Pixel's "brain": Google Gemini, Claude (Anthropic) or
- * ChatGPT (OpenAI), reached directly over HTTPS with the person's own API
+ * ChatGPT (OpenAI), or open models (Llama and others) on Groq, reached directly over HTTPS with the person's own API
  * key. The conversation so far goes with each question, so he remembers what
  * was said (the last several turns). A question runs on a thread of its own. */
 #pragma once
 #include <stdbool.h>
 
-typedef enum { AI_GEMINI, AI_CLAUDE, AI_OPENAI, AI_COUNT } AiBrain;
+typedef enum { AI_GEMINI, AI_CLAUDE, AI_OPENAI, AI_GROQ, AI_COUNT } AiBrain;
 typedef enum { AI_IDLE, AI_BUSY, AI_DONE, AI_FAILED } AiState;
 
-const char *ai_name(AiBrain b);          /* "Google Gemini", "Claude", "ChatGPT" */
+const char *ai_name(AiBrain b);          /* "Google Gemini", "Claude", "ChatGPT", "Groq" */
 const char *ai_key_page(AiBrain b);      /* where to make a key */
-const char *ai_id(AiBrain b);            /* "gemini", "claude", "openai" (settings, the web page) */
+const char *ai_id(AiBrain b);            /* "gemini", "claude", "openai", "groq" (settings, the web page) */
 AiBrain ai_from_id(const char *id);      /* AI_COUNT if unknown */
 
 void ai_set(AiBrain b, const char *key, const char *model);   /* model "" = the usual one */
@@ -24,7 +24,7 @@ void ai_forget(void);                    /* a new conversation */
 const char *ai_model(void);              /* the model in use (it can change if the usual one has gone) */
 
 /* Listening (the microphone): what was said goes to an AI that can hear
- * (Gemini or ChatGPT: e, with its key and model, "" = the usual one) to be
+ * (Groq, Gemini or ChatGPT: e, with its key and model, "" = the usual one) to be
  * written down, then on to the brain in use as the question. pcm stays in
  * use until the state isn't AI_BUSY. */
 bool ai_can_hear(AiBrain b);
