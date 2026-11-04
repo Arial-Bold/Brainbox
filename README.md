@@ -1,5 +1,8 @@
 # Professor Scotty
 
+<img width="1280" height="960" alt="01-ready" src="https://github.com/user-attachments/assets/726ffb06-26e5-4622-94ce-d166ea3854a0" />
+
+
 Professor Scotty is a kindly old hologram professor who lives in your GameCube. Ask him anything by talking into the GameCube Microphone or typing on the keyboard controller, and he answers out loud, floating in a beam of light, using the AI of your choice: open models on **Groq** (Llama and others), **Google Gemini**, **Claude** or **ChatGPT**.
 
 - He's drawn in 3D on the GameCube's own graphics chip, as one smoothly sculpted head: soft lighting, a hologram shimmer, a glow, sparkles and a reflection on the floor. He blinks, raises his eyebrows, puts his spectacles on to think, and his mouth moves with his voice.
@@ -23,11 +26,17 @@ Download `pixel.zip` from the Releases page and copy the `pixel` folder in it to
 
 ## Signing in
 
+<img width="1280" height="960" alt="05-choose-ai" src="https://github.com/user-attachments/assets/2eb82453-8bde-400b-af57-19927ccccbc0" />
+
+
 The first time, the professor's head is a little foggy: he needs a brain. Choose Groq, Google Gemini, Claude or ChatGPT, and a sign-in page appears with a QR code. Scan it with your phone (or open the address on a computer on the same network). The page links to that company's own site, where you sign in with your account and make an API key; paste the key into the page and press Send. You can also type the key with the keyboard controller (Y).
 
 The GameCube's clock is set from the internet first (secure connections need the right date). The key is saved in `pixel.ini` beside the app on the SD card and is only ever sent to the company it's for. You can switch to a different AI in Settings > Brain.
 
 ## Talking to him
+
+<img width="1280" height="960" alt="02-listening" src="https://github.com/user-attachments/assets/f946dffd-2037-4624-862a-dbd7074bae96" />
+
 
 With the microphone in a memory card slot, hold the button on the microphone (or A on the controller), ask your question, and let go. What you said goes to the AI to be written down (it shows in the "You" bubble), then on to him as the question. Up to 15 seconds at a time. While the microphone is being tried out, the last recording is kept as `heard.wav` beside the app, with a few details about it in `mic.txt`.
 
@@ -47,6 +56,9 @@ Groq, Google Gemini and ChatGPT can listen. When Groq is signed in, it always do
 | START | Settings |
 
 ## Settings
+
+<img width="1280" height="960" alt="08-settings" src="https://github.com/user-attachments/assets/0a090150-4533-452f-9365-46455233ddc2" />
+
 
 - **Resolution**: Auto (480p with a component cable), 480i or 480p. A new resolution goes back to the old one after 10 seconds unless you press A.
 - **Screen**: 4:3, or 16:9 if your TV stretches the picture to fill a widescreen.
