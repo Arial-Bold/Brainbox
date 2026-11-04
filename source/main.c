@@ -186,6 +186,10 @@ static void signin_state(const char *state) {
 
 /* Tries a key: he introduces himself with it. True if it worked. */
 static bool try_key(int b, const char *key) {
+	/* tried first; kept only if it works */
+	char old_key[UI_KEY_MAX];
+	int old_brain = ui_set.brain;
+	snprintf(old_key, sizeof(old_key), "%s", ui_set.key[b]);
 	snprintf(ui_set.key[b], UI_KEY_MAX, "%s", key);
 	ui_set.brain = b;
 	use_brain();
@@ -195,11 +199,15 @@ static bool try_key(int b, const char *key) {
 	while (ai_state() == AI_BUSY) read_input();
 	ui_pose(0, 0, true);
 	if (ai_state() == AI_DONE) {
+		snprintf(ui_set.model[b], sizeof(ui_set.model[b]), "%s", ai_model());   /* (the model that answered) */
 		save_settings();
 		return true;
 	}
-	char msg[200];
-	snprintf(msg, sizeof(msg), "%.190s", ai_answer());
+	char msg[400];
+	snprintf(msg, sizeof(msg), "%.390s", ai_answer());
+	snprintf(ui_set.key[b], UI_KEY_MAX, "%s", old_key);   /* back as it was */
+	ui_set.brain = old_brain;
+	use_brain();
 	signin_state(msg);
 	ui_toast("That key didn't work. Try another?");
 	return false;
@@ -462,6 +470,11 @@ static void ask(const char *q) {
 		return;
 	}
 	if (ai_state() == AI_DONE) {
+		int b = ui_set.brain;
+		if (strcmp(ui_set.model[b], ai_model())) {   /* the usual model had gone: keep the one that answered */
+			snprintf(ui_set.model[b], sizeof(ui_set.model[b]), "%s", ai_model());
+			save_settings();
+		}
 		say(q, ai_answer());
 		if (strstr(ai_answer(), "Ha") || strstr(ai_answer(), "ha!")) ui_chuckle();
 	} else {
