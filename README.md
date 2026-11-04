@@ -1,6 +1,6 @@
-# Professor Pixel
+# Professor Scotty
 
-Professor Pixel is a kindly old hologram professor who lives in your GameCube. Ask him anything by talking into the GameCube Microphone or typing on the keyboard controller, and he answers out loud, floating in a beam of light, using the AI of your choice: open models on **Groq** (Llama and others), **Google Gemini**, **Claude** or **ChatGPT**.
+Professor Scotty is a kindly old hologram professor who lives in your GameCube. Ask him anything by talking into the GameCube Microphone or typing on the keyboard controller, and he answers out loud, floating in a beam of light, using the AI of your choice: open models on **Groq** (Llama and others), **Google Gemini**, **Claude** or **ChatGPT**.
 
 - He's drawn in 3D on the GameCube's own graphics chip, as one smoothly sculpted head: soft lighting, a hologram shimmer, a glow, sparkles and a reflection on the floor. He blinks, raises his eyebrows, puts his spectacles on to think, and his mouth moves with his voice.
 - His voice is made on the GameCube itself with [Flite](https://github.com/festvox/flite), the speech engine from Carnegie Mellon University, in its Scottish voice (awb): no account or internet needed for it. Sounds like "Hmm", everyday slang and abbreviations are tidied first so he says them naturally. He starts speaking a sentence at a time, and the speech is kept in the GameCube's audio memory (ARAM).
@@ -57,7 +57,7 @@ Groq, Google Gemini and ChatGPT can listen. When Groq is signed in, it always do
 - **Captions**: shows his answers in a bubble as he speaks.
 - **Brain**: which AI he uses (Groq, Google Gemini, Claude or ChatGPT), and signing in to it.
 - **Launcher**: which .dol at the root of the SD card Exit to Launcher starts.
-- **Exit to Launcher**: leaves Professor Pixel.
+- **Exit to Launcher**: leaves Professor Scotty.
 
 A few more can be set by hand in `pixel.ini`: `groq.model`, `gemini.model`, `claude.model` and `openai.model` choose a different model for each service (empty for the usual one), and `display.glow=0` turns the glow off.
 
@@ -79,4 +79,4 @@ Every push to GitHub builds it too (see the Actions tab), and the result is a zi
 - libogc2 and libdvm: Extrems and the devkitPro team
 - Font: M PLUS Rounded 1c (SIL Open Font License, see `tools/fonts/OFL.txt`)
 
-Professor Pixel isn't affiliated with Groq, Meta, Google, Anthropic, OpenAI or Nintendo.
+Professor Scotty isn't affiliated with Groq, Meta, Google, Anthropic, OpenAI or Nintendo.
