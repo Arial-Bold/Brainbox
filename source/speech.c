@@ -28,7 +28,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-cst_voice *register_cmu_us_rms(const char *voxdir);
+cst_voice *register_cmu_us_awb(const char *voxdir);
 void usenglish_init(cst_voice *v);
 cst_lexicon *cmulex_init(void);
 extern jmp_buf *cst_errjmp;
@@ -176,7 +176,7 @@ static void *talk_main(void *arg) {
         flite_init();
         flite_add_lang("eng", usenglish_init, cmulex_init);
         flite_add_lang("usenglish", usenglish_init, cmulex_init);
-        voice = register_cmu_us_rms(NULL);
+        voice = register_cmu_us_awb(NULL);
         saywords_teach(voice);   /* the words it would get wrong */
     }
     cst_errjmp = NULL;
