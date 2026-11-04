@@ -28,6 +28,7 @@ const char appversion[] = "v1.0";
 /* ---------------------------------------------------------------- input */
 
 static u32 held, down, held_prev;
+static bool dir_sounds = true;   /* the move sounds (not while scrolling his answer) */
 static int repeat;
 
 /* once a frame: the controller (the stick works as the + Control Pad) and the keyboard */
@@ -49,7 +50,7 @@ static void read_input(void) {
 	}
 	if (down & PAD_BUTTON_B) sound_play(SFX_BACK);
 	else if (down & (PAD_BUTTON_A | PAD_BUTTON_X | PAD_BUTTON_Y | PAD_BUTTON_START)) sound_play(SFX_SELECT);
-	else if (down & dirs) sound_play(SFX_HOVER);
+	else if ((down & dirs) && dir_sounds) sound_play(SFX_HOVER);
 	kb_update();
 }
 
@@ -449,19 +450,26 @@ static void settings(void) {
 
 static bool has_mic;   /* a microphone in a memory card slot */
 
+static bool asked_once;   /* (once he's been asked something, the "how to ask" bar goes for this time) */
+
 static const char *idle_caption(void) {
 	if (has_mic) return kb_connected() ? "Hold the mic button and talk, or start typing\x85" : "Hold the mic button and talk to me\x85";
 	return kb_connected() ? "Start typing your question\x85" : "Plug in a microphone or the keyboard controller to ask a question";
+}
+
+/* the bar telling you how to ask: until you first have (or when there's no way to) */
+static void show_idle_caption(void) {
+	if (asked_once && (has_mic || kb_connected())) ui_caption(UI_CAP_NONE, "");
+	else ui_caption(UI_CAP_INFO, idle_caption());
 }
 
 static void idle_hints(void) {
 	const char *ask_hint = has_mic ? "MIC:Hold to talk" : "A:Ask";
 	bool more = ui_chat_more() > 0;
 	if (has_mic && kb_connected()) {
-		if (more) hints(5, ask_hint, "Y:Type", "S:Scroll", "ST:Settings", "B:Exit");
-		else hints(4, ask_hint, "Y:Type", "ST:Settings", "B:Exit to Launcher");
-	} else if (more) hints(4, ask_hint, "S:Scroll", "ST:Settings", "B:Exit to Launcher");
-	else hints(3, ask_hint, "ST:Settings", "B:Exit to Launcher");
+		hints(4, ask_hint, "Y:Type", "ST:Settings", "B:Exit to Launcher");
+	} else hints(3, ask_hint, "ST:Settings", "B:Exit to Launcher");
+	(void)more;   /* (the arrows beside his answer show there's more: no hint needed) */
 }
 
 /* what he says once the AI has answered q */
@@ -483,6 +491,7 @@ static void answered(const char *q) {
 
 /* asks the question and has him answer it */
 static void ask(const char *q) {
+	asked_once = true;
 	ui_layout(1);
 	ui_chat(q, "");
 	ui_caption(UI_CAP_THINK, "Hmm, let me think about that\x85");
@@ -546,6 +555,7 @@ static void listen_and_ask(void) {
 	}
 	speech_stop();
 	while (ai_state() == AI_BUSY) read_input();   /* (a question he was told to never mind, still on its way) */
+	asked_once = true;
 	if (!listen_start()) { has_mic = false; ui_toast("The microphone isn't answering. Is it pushed all the way in?"); return; }
 	ui_layout(0);
 	ui_chat("", "");
@@ -605,14 +615,16 @@ static void listen_and_ask(void) {
 static void conversation(void) {
 	bool exit_armed = false;
 	u64 exit_at = 0;
-	ui_caption(UI_CAP_INFO, idle_caption());
+	show_idle_caption();
 	idle_hints();
 	bool was_kb = kb_connected();
 	for (;;) {
+		dir_sounds = false;   /* (up and down scroll his answer: quietly) */
 		read_input();
+		dir_sounds = true;
 		u64 now = ticks_to_millisecs(gettime());
 		if (exit_armed && now - exit_at > 3000) exit_armed = false;
-		if (kb_connected() != was_kb) { was_kb = kb_connected(); ui_caption(UI_CAP_INFO, idle_caption()); idle_hints(); }
+		if (kb_connected() != was_kb) { was_kb = kb_connected(); show_idle_caption(); idle_hints(); }
 		/* a key typed on the keyboard starts a question */
 		KbEvent e;
 		char q[400] = "";
@@ -625,7 +637,7 @@ static void conversation(void) {
 		bool mic = listen_present();
 		if (mic != has_mic) {
 			has_mic = mic;
-			ui_caption(UI_CAP_INFO, idle_caption());
+			show_idle_caption();
 			idle_hints();
 			if (mic) ui_toast("Microphone found: hold its button and talk!");
 		}
@@ -637,14 +649,14 @@ static void conversation(void) {
 		if (mic_pressed) {
 			listen_and_ask();
 			mic_was = listen_button();
-			ui_caption(UI_CAP_INFO, idle_caption());
+			show_idle_caption();
 			idle_hints();
 			continue;
 		}
 		if (down & PAD_BUTTON_A) {
 			if (has_mic) {
 				listen_and_ask();
-				ui_caption(UI_CAP_INFO, idle_caption());
+				show_idle_caption();
 				idle_hints();
 				continue;
 			}
@@ -658,7 +670,7 @@ static void conversation(void) {
 		if (start) {
 			speech_stop();
 			if (type_line("Type your question, then press Enter", q, sizeof(q), false)) ask(q);
-			ui_caption(UI_CAP_INFO, idle_caption());
+			show_idle_caption();
 			idle_hints();
 			continue;
 		}
@@ -668,7 +680,7 @@ static void conversation(void) {
 		if (down & PAD_BUTTON_START) {
 			speech_stop();
 			settings();
-			ui_caption(UI_CAP_INFO, idle_caption());
+			show_idle_caption();
 			idle_hints();
 			/* (the B that closed Settings isn't the first B of "exit to Launcher") */
 			wait_release();

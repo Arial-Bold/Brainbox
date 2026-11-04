@@ -1023,28 +1023,40 @@ static void chat(void) {
 
 /* the caption bar along the bottom of the stage */
 static void caption(void) {
-	if (sc.cap_kind == UI_CAP_NONE || sc.screen != UI_STAGE || sc.overlay) return;
-	float t = now_ms() / 1000.0f;
-	float w = sc.cap_kind == UI_CAP_TYPE ? 540 : 380, x = 320 - w / 2, y = 400;
-	rrect_v(x, y, w, 32, 14, rgba(20, 18, 70, 225), rgba(20, 18, 70, 225));
-	outline(x, y, w, 32, 14, 1, rgba(175, 175, 255, 150));
+	/* when it goes, it fades out (what it last said, fading) */
+	static int kind;
+	static char cap[160];
+	static float vis;
+	static u32 last;
+	u32 now = now_ms();
+	float dt = last ? (now - last) / 1000.0f : 0;
+	last = now;
+	if (sc.cap_kind != UI_CAP_NONE) { kind = sc.cap_kind; cpy(cap, sc.cap, sizeof(cap)); vis = 1; }
+	else if (vis > 0) vis -= dt * 2.5f;
+	if (vis <= 0 || kind == UI_CAP_NONE || sc.screen != UI_STAGE || sc.overlay) return;
+	float K = ease(vis);
+	#define KC(c) alpha((c), K)
+	float t = now / 1000.0f;
+	float w = kind == UI_CAP_TYPE ? 540 : 380, x = 320 - w / 2, y = 400;
+	rrect_v(x, y, w, 32, 14, KC(rgba(20, 18, 70, 225)), KC(rgba(20, 18, 70, 225)));
+	outline(x, y, w, 32, 14, 1, KC(rgba(175, 175, 255, 150)));
 	float tx = x + 18;
-	if (sc.cap_kind == UI_CAP_THINK) {
-		for (int i = 0; i < 3; i++) circle(tx + 4 + i * 11, y + 16, 3.5f, rgba(130, 220, 255, (u8)(110 + 120 * (0.5f + 0.5f * sinf(t * 6 - i)))));
+	if (kind == UI_CAP_THINK) {
+		for (int i = 0; i < 3; i++) circle(tx + 4 + i * 11, y + 16, 3.5f, KC(rgba(130, 220, 255, (u8)(110 + 120 * (0.5f + 0.5f * sinf(t * 6 - i))))));
 		tx += 40;
-	} else if (sc.cap_kind == UI_CAP_LISTEN) {
+	} else if (kind == UI_CAP_LISTEN) {
 		/* a red "recording" light, and bars that follow how loud it is */
-		circle(tx + 4, y + 16, 4.5f, rgba(255, 70, 80, (u8)(170 + 85 * (0.5f + 0.5f * sinf(t * 5)))));
+		circle(tx + 4, y + 16, 4.5f, KC(rgba(255, 70, 80, (u8)(170 + 85 * (0.5f + 0.5f * sinf(t * 5))))));
 		sc.listen_shown += (sc.listen - sc.listen_shown) * 0.35f;
 		float lv = sc.listen_shown;
 		for (int i = 0; i < 9; i++) {
 			float shape = 0.55f + 0.45f * fabsf(sinf(t * 9 + i * 1.9f));
 			float hh = 1.5f + 10.5f * lv * shape * (1 - fabsf(i - 4) / 6.0f);
-			rrect_v(tx + 16 + i * 5, y + 16 - hh, 3, hh * 2, 1, rgba(130, 220, 255, 230), rgba(130, 220, 255, 230));
+			rrect_v(tx + 16 + i * 5, y + 16 - hh, 3, hh * 2, 1, KC(rgba(130, 220, 255, 230)), KC(rgba(130, 220, 255, 230)));
 		}
 		tx += 70;
 	}
-	if (sc.cap_kind == UI_CAP_TYPE) {
+	if (kind == UI_CAP_TYPE) {
 		char shown[420];
 		if (sc.masked) {
 			size_t n = strlen(sc.typing);
@@ -1054,15 +1066,16 @@ static void caption(void) {
 		const char *show = shown;
 		float maxw = w - 40;
 		while (*show && text_width(show, 13) > maxw) show++;   /* the end of a long line */
-		if (!sc.typing[0]) text(tx, y + 16, sc.cap, 13, DIM, 0, maxw);
-		text(tx, y + 16, show, 13, TEXT, 0, 0);
+		if (!sc.typing[0]) text(tx, y + 16, cap, 13, KC(DIM), 0, maxw);
+		text(tx, y + 16, show, 13, KC(TEXT), 0, 0);
 		if (fmodf(t, 1.0f) < 0.55f) {
 			float cxp = tx + text_width(show, 13) + 1;
-			rect(cxp, y + 7, 2, 18, GOLD);
+			rect(cxp, y + 7, 2, 18, KC(GOLD));
 		}
 	} else {
-		text(sc.cap_kind == UI_CAP_INFO ? 320 : tx, y + 16, sc.cap, 13, TEXT, sc.cap_kind == UI_CAP_INFO ? 1 : 0, w - (tx - x) - 14);
+		text(kind == UI_CAP_INFO ? 320 : tx, y + 16, cap, 13, KC(TEXT), kind == UI_CAP_INFO ? 1 : 0, w - (tx - x) - 14);
 	}
+	#undef KC
 }
 
 /* ---------------------------------------------------------------- panels */
