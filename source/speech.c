@@ -131,7 +131,8 @@ static void *player_main(void *arg) {
             DCFlushRange(chunks[k], CHUNK * 2);
             filled++;
         }
-        u16 vol = (u16)(ui_set.voice_volume * 255 / UI_VOLUME_MAX);
+        /* (0x100 is the sound as made; the top setting is a quarter louder) */
+        u16 vol = (u16)(ui_set.voice_volume * 320 / UI_VOLUME_MAX);
         AESND_SetVoiceVolume(pb, vol, vol);
         thr_sleep_ms(15);
     }

@@ -702,6 +702,37 @@ static void floor_draw(float cx) {
 	/* (below the texture, if overscan shows more: plain floor) */
 }
 
+/* an ellipse (radii rx, ry) drawn as a band of width w: full colour along its
+ * middle, fading to nothing at both edges */
+static void soft_ring(float cx, float cy, float rx, float ry, float w, Color c) {
+	Color e = alpha(c, 0);
+	const int n = 96;
+	for (int side = 0; side < 2; side++) {   /* inner half, outer half */
+		GX_Begin(GX_TRIANGLESTRIP, GX_VTXFMT0, 2 * (n + 1));
+		for (int i = 0; i <= n; i++) {
+			float a = 6.2831853f * i / n, ca = cosf(a), sa = sinf(a);
+			/* (out from the line, square on to it on the screen, so it's the
+			 * same thickness all the way round) */
+			float nx = ca / rx, ny = sa / ry, nl = sqrtf(nx * nx + ny * ny);
+			float o = (side ? w : -w) * 0.5f / nl;
+			vtx(cx + ca * rx, cy + sa * ry, c, 0, 0);
+			vtx(cx + ca * rx + nx * o, cy + sa * ry + ny * o, e, 0, 0);
+		}
+		GX_End();
+	}
+}
+
+/* the ring on the floor: a soft glow, and a bright line through it whose
+ * edges fade out (so it's smooth, not stepped, on the TV) */
+static void pedestal_ring(float cx) {
+	float py = HORIZON + 30;
+	mode_color();
+	GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_ONE, GX_LO_CLEAR);
+	soft_ring(cx, py, 125, 17, 12, rgba(80, 140, 255, 70));     /* the glow */
+	soft_ring(cx, py, 125, 17, 3.2f, rgba(200, 230, 255, 235)); /* the line */
+	GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
+}
+
 static void room(float cx) {
 	float fx = vl, fy = vt, fw = vr - vl, fh = vb - vt;
 	rect_v(fx, fy, fw, HORIZON - fy, rgba(7, 7, 18, 255), rgba(14, 12, 38, 255));
@@ -711,33 +742,36 @@ static void room(float cx) {
 	/* the pedestal: a glowing ring on the floor */
 	float py = HORIZON + 30;
 	soft_blob(cx, py, 125, 17, rgba(20, 30, 80, 200));
-	mode_color();
-	for (int pass = 0; pass < 3; pass++) {
-		float w = pass == 0 ? 7 : pass == 1 ? 3.5f : 1.5f;
-		Color c = pass == 0 ? rgba(90, 150, 255, 50) : pass == 1 ? rgba(110, 170, 255, 140) : rgba(200, 230, 255, 255);
-		GX_Begin(GX_TRIANGLESTRIP, GX_VTXFMT0, 2 * 49);
-		for (int i = 0; i <= 48; i++) {
-			float a = 6.2831853f * i / 48, ca = cosf(a), sa = sinf(a);
-			vtx(cx + ca * (125 - w), py + sa * (17 - w * 0.14f), c, 0, 0);
-			vtx(cx + ca * (125 + w), py + sa * (17 + w * 0.14f), c, 0, 0);
-		}
-		GX_End();
-	}
+	/* (the ring itself is drawn later, over his reflection: pedestal_ring) */
 }
 
-/* the beam: a cone of light from the pedestal up, brightest in the middle */
+/* the beam: a cone of light from the pedestal up, brightest in the middle,
+ * fading out at its sides, its top, and at its foot into the ring (no hard edge) */
 static void beam(float cx, float top, float k) {
 	float py = HORIZON + 30;
 	mode_color();
 	GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_ONE, GX_LO_CLEAR);
-	Color mid = rgba(60, 100, 220, (u8)(120 * k)), side = rgba(60, 100, 220, 0), topc = rgba(60, 100, 220, 0);
 	float hb = 125, ht = 70;
-	GX_Begin(GX_TRIANGLES, GX_VTXFMT0, 12);
-	vtx(cx - hb, py, side, 0, 0); vtx(cx, py, mid, 0, 0); vtx(cx, top, topc, 0, 0);
-	vtx(cx - hb, py, side, 0, 0); vtx(cx, top, topc, 0, 0); vtx(cx - ht, top, side, 0, 0);
-	vtx(cx + hb, py, side, 0, 0); vtx(cx, py, mid, 0, 0); vtx(cx, top, topc, 0, 0);
-	vtx(cx + hb, py, side, 0, 0); vtx(cx, top, topc, 0, 0); vtx(cx + ht, top, side, 0, 0);
-	GX_End();
+	const int rows = 24;
+	for (int r = 0; r < rows; r++) {
+		float y0 = py - (py - top) * r / rows, y1 = py - (py - top) * (r + 1) / rows;
+		float a0, a1;
+		for (int e = 0; e < 2; e++) {
+			float y = e ? y1 : y0;
+			float up = (py - y) / (py - top);                       /* 0 at the foot, 1 at the top */
+			float foot = ease(clamp01((py - y) / 34));               /* fading in over its foot */
+			float a = 120 * k * (1 - up) * foot;
+			if (e) a1 = a; else a0 = a;
+		}
+		float w0 = hb + (ht - hb) * (float)r / rows, w1 = hb + (ht - hb) * (float)(r + 1) / rows;
+		Color m0 = rgba(60, 100, 220, (u8)a0), m1 = rgba(60, 100, 220, (u8)a1), z = rgba(60, 100, 220, 0);
+		GX_Begin(GX_QUADS, GX_VTXFMT0, 8);
+		vtx(cx - w0, y0, z, 0, 0); vtx(cx, y0, m0, 0, 0); vtx(cx, y1, m1, 0, 0); vtx(cx - w1, y1, z, 0, 0);
+		vtx(cx, y0, m0, 0, 0); vtx(cx + w0, y0, z, 0, 0); vtx(cx + w1, y1, z, 0, 0); vtx(cx, y1, m1, 0, 0);
+		GX_End();
+	}
+	/* a glow where it meets the ring */
+	soft_blob(cx, py - 4, 110, 22, rgba(70, 120, 255, (u8)(60 * k)));
 	GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
 }
 
@@ -876,7 +910,8 @@ static void scanlines(float cx, float top, float t) {
 	for (float y = floorf(top) + off - 4; y < py; y += 4) {
 		float k = clamp01((y - top) / (py - top));     /* 0 at the top, 1 at the floor */
 		float hw = ht + (hb - ht) * k;
-		Color mid = rgba(6, 10, 40, (u8)(48 * (0.25f + 0.75f * k))), edge = rgba(6, 10, 40, 0);
+		float foot = ease(clamp01((py - y - 18) / 40));   /* (clear of the ring) */
+		Color mid = rgba(6, 10, 40, (u8)(48 * (0.25f + 0.75f * k) * foot)), edge = rgba(6, 10, 40, 0);
 		scan_quad(cx - hw, cx, y, 2, edge, mid);
 		scan_quad(cx, cx + hw, y, 2, mid, edge);
 	}
@@ -904,6 +939,7 @@ static void stage(void) {
 	 * using the depth he left behind, and over the beam around him */
 	(void)box;
 	scanlines(cx, 60, t);
+	pedestal_ring(cx);
 	sparkles(cx, t);
 	bloom();
 	/* fog round his head (the foggy-headed greeting) */

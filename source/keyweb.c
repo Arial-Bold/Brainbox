@@ -72,7 +72,7 @@ static void page(int fd, const char *note) {
     AiBrain b = for_brain;
     static char body[3000];
     snprintf(body, sizeof(body),
-             "<!doctype html><html><head><title>Professor Scotty: sign in</title>%s</head><body><main>"
+             "<!doctype html><html><head><title>BrainBox: sign in</title>%s</head><body><main>"
              "<h1>Lend Professor Scotty a brain</h1><p>He'll use <b>%s</b>.</p>%s"
              "<div class=card><b>1.</b> Make an API key at <a href='%s' target=_blank>%s</a> "
              "(sign in there with your own account).</div>"

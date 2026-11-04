@@ -1,4 +1,4 @@
-/* main.c - Professor Scotty: a hologram professor on the GameCube who answers
+/* main.c - BrainBox: Professor Scotty, a hologram professor on the GameCube who answers
  * your questions with the AI of your choice (Google Gemini, Claude or
  * ChatGPT, or open models on Groq) and speaks his answers aloud.
  *
@@ -142,7 +142,7 @@ static void use_brain(void) {
 }
 
 static void save_settings(void) {
-	if (!storage_ok()) { ui_toast("No SD card: these settings last until Professor Scotty closes."); return; }
+	if (!storage_ok()) { ui_toast("No SD card: these settings last until BrainBox closes."); return; }
 	if (!ui_settings_save()) ui_toast("Couldn't save the settings to the SD card.");
 }
 
@@ -334,7 +334,7 @@ static void settings_help(int row) {
 		{ "Captions", "Shows his answers in a bubble as he speaks." },
 		{ "Brain", "Which AI he uses: Groq, Google Gemini, Claude or ChatGPT. A to change or sign in." },
 		{ "Launcher", "The program at the root of the SD card that Exit to Launcher starts." },
-		{ "Exit to Launcher", "Leaves Professor Scotty." },
+		{ "Exit to Launcher", "Leaves BrainBox." },
 	};
 	ui_status(help[row][0], help[row][1]);
 	if (row >= S_BRAIN && row != S_LAUNCHER) hints(3, "S:Move", "A:Select", "B:Back");
@@ -665,7 +665,16 @@ static void conversation(void) {
 		if (down & PAD_BUTTON_UP) { ui_chat_scroll(-1); idle_hints(); }
 		if (down & PAD_BUTTON_DOWN) { ui_chat_scroll(3); idle_hints(); }
 		if (down & PAD_BUTTON_X) speech_stop();
-		if (down & PAD_BUTTON_START) { speech_stop(); settings(); ui_caption(UI_CAP_INFO, idle_caption()); idle_hints(); }
+		if (down & PAD_BUTTON_START) {
+			speech_stop();
+			settings();
+			ui_caption(UI_CAP_INFO, idle_caption());
+			idle_hints();
+			/* (the B that closed Settings isn't the first B of "exit to Launcher") */
+			wait_release();
+			exit_armed = false;
+			continue;
+		}
 		if (down & PAD_BUTTON_B) {
 			if (speech_busy()) { speech_stop(); continue; }
 			if (exit_armed) exit_to_launcher();

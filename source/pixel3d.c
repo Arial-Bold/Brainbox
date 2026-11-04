@@ -7,13 +7,14 @@
  * (eyes, nose, spectacles, bow tie), and glowing props. Then he's projected
  * into the 640x480 layout and drawn as triangles with the depth buffer on. */
 #include "pixel3d.h"
+#include "earth_map.h"
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
 #include <malloc.h>
 
-#define MAXV 16000
-#define MAXT 27000
+#define MAXV 24000
+#define MAXT 40000
 
 typedef struct { float x, y, z; } V3;
 enum { SKIN, GLOSS, EMIS, MATTE, DARK };
@@ -41,6 +42,9 @@ static V3 apply(const M3 *m, V3 v) {
 }
 
 /* ------------------------------------------------------------------ shapes */
+
+#define GLOBE_C v3(-1.08f, 0.18f, -0.30f)
+static int globe_v0, globe_v1;   /* the globe's vertices (lit again each frame as it turns) */
 
 static float cur_r, cur_g, cur_b;
 static int cur_mat, cur_grp;
@@ -618,45 +622,95 @@ static void build(const PixelPose *ps, bool S) {
         param_surface(10, 24, bow_knot, NULL, &T, at);
     }
     }
-    /* floating props: a little glowing globe, and a pencil that scribbles
-     * (always made, drawn only when wanted: see pixel3d_draw) */
+    /* floating props: a little glowing globe of the Earth that turns, and a
+     * pencil that scribbles (always made, drawn only when wanted: see
+     * pixel3d_draw). The globe turns as a whole (its matrix, in
+     * pixel3d_draw), so its land stays put on it. */
     {
-        V3 gc0 = v3(-1.08f, 0.18f, -0.30f), gc = v3(-1.08f, 0.18f + 0.04f * sinf(t * 1.4f), -0.30f);
+        V3 gc0 = GLOBE_C;
         if (S) {
         cur_grp = G_GLOBE;
-        colour(0.16f, 0.36f, 0.80f, GLOSS); ellipsoid(gc0, v3(0.22f, 0.22f, 0.22f), 20, 14, NULL);
-        colour(0.40f, 0.85f, 0.55f, GLOSS);
-        ellipsoid(add(gc0, v3(-0.06f, 0.07f, -0.19f)), v3(0.09f, 0.06f, 0.05f), 10, 6, NULL);
-        ellipsoid(add(gc0, v3(0.07f, -0.06f, -0.19f)), v3(0.07f, 0.08f, 0.05f), 10, 6, NULL);
+        globe_v0 = nverts;
+        /* the Earth: sea and land from the map, a little ice at the poles */
+        {
+            const int nu = 72, nvv = 40;
+            const float R = 0.22f;
+            int base = nverts;
+            for (int j = 0; j <= nvv; j++) {
+                float th = 3.1415927f * j / nvv, st = sinf(th), ct = cosf(th);
+                float lat = 90 - 180.0f * j / nvv;
+                for (int i = 0; i < nu; i++) {
+                    float ph = 6.2831853f * i / nu;
+                    V3 u = v3(st * cosf(ph), ct, st * sinf(ph));
+                    /* (longitude round the globe; the map blended between its spots) */
+                    float lon = -180 + 360.0f * i / nu;
+                    float mx = (lon + 180) / 360 * EARTH_W - 0.5f, my = (90 - lat) / 180 * EARTH_H - 0.5f;
+                    int x0 = (int)floorf(mx), y0 = (int)floorf(my);
+                    float fx = mx - x0, fy = my - y0;
+                    float land = ((earth_at(x0, y0) * (1 - fx) + earth_at(x0 + 1, y0) * fx) * (1 - fy) +
+                                  (earth_at(x0, y0 + 1) * (1 - fx) + earth_at(x0 + 1, y0 + 1) * fx) * fy) / 15.0f;
+                    land = land < 0.35f ? 0 : land > 0.65f ? 1 : (land - 0.35f) / 0.3f;
+                    float ice = fabsf(lat) > 62 ? fminf((fabsf(lat) - 62) / 10, 1) : 0;
+                    /* sea: deep blue, lighter towards the coasts; land: greens, drier towards the tropics' deserts */
+                    float dry = expf(-((fabsf(lat) - 24) * (fabsf(lat) - 24)) / 120.0f) * 0.6f;
+                    float sr = 0.10f, sg = 0.30f, sb = 0.78f;
+                    float lr = 0.30f + 0.45f * dry, lg = 0.66f - 0.12f * dry, lb = 0.32f - 0.08f * dry;
+                    float rr = sr + (lr - sr) * land, gg = sg + (lg - sg) * land, bb = sb + (lb - sb) * land;
+                    float ik = land > 0.2f || fabsf(lat) > 74 ? ice : 0;
+                    rr += (0.95f - rr) * ik; gg += (0.97f - gg) * ik; bb += (1.0f - bb) * ik;
+                    colour(rr, gg, bb, land > 0.5f ? MATTE : GLOSS);
+                    int vi = vert(add(gc0, mul(u, R)), u);
+                    if (vi >= 0) vsk[vi] = land > 0.5f ? 0.06f : 0.55f;
+                }
+            }
+            grid(base, nu, nvv + 1);
+        }
+        /* glowing hologram rings: a few lines of latitude and two meridians, turning with it */
         colour(0.55f, 0.95f, 1.0f, EMIS);
         for (int k = -1; k <= 1; k++) {
-            V3 p[25];
-            float y = 0.11f * k, rr = sqrtf(0.225f * 0.225f - y * y);
-            for (int i = 0; i < 25; i++) { float a = 6.2831853f * i / 24; p[i] = add(gc0, v3(rr * cosf(a), y, rr * sinf(a))); }
-            tube(p, 25, 0.006f, 4);
+            V3 p[33];
+            float y = 0.11f * k, rr = sqrtf(0.226f * 0.226f - y * y);
+            for (int i = 0; i < 33; i++) { float a = 6.2831853f * i / 32; p[i] = add(gc0, v3(rr * cosf(a), y, rr * sinf(a))); }
+            tube(p, 33, 0.005f, 4);
         }
+        for (int k = 0; k < 2; k++) {
+            V3 p[33];
+            float ang = k * 1.5707963f;
+            for (int i = 0; i < 33; i++) {
+                float a = 6.2831853f * i / 32;
+                p[i] = add(gc0, v3(0.226f * cosf(a) * cosf(ang), 0.226f * sinf(a), 0.226f * cosf(a) * sinf(ang)));
+            }
+            tube(p, 33, 0.005f, 4);
+        }
+        globe_v1 = nverts;
+        /* the pencil: a six-sided yellow body, a metal band and a pink eraser
+         * at one end, and at the other the sharpened wood narrowing to its lead */
         V3 pc = v3(1.06f, 0.10f, -0.35f), d = v3(sinf(-0.6f), -cosf(-0.6f), 0);
         cur_grp = G_PENCIL;
-        V3 body[6];
-        for (int i = 0; i < 6; i++) body[i] = add(pc, mul(d, -0.26f + 0.44f * i / 5));
-        colour(0.98f, 0.80f, 0.25f, GLOSS); tube(body, 6, 0.04f, 6);
-        M3 rp = rotz(-0.6f);
-        colour(0.92f, 0.78f, 0.60f, SKIN); ellipsoid(add(pc, mul(d, 0.23f)), v3(0.035f, 0.06f, 0.035f), 8, 6, &rp);
-        colour(0.2f, 0.2f, 0.25f, MATTE); ellipsoid(add(pc, mul(d, 0.28f)), v3(0.015f, 0.025f, 0.015f), 6, 4, &rp);
-        colour(0.98f, 0.55f, 0.60f, MATTE); ellipsoid(add(pc, mul(d, -0.29f)), v3(0.042f, 0.05f, 0.042f), 8, 6, &rp);
+        #define ALONG(k) add(pc, mul(d, (k)))
+        {
+            V3 body[2] = { ALONG(-0.20f), ALONG(0.16f) };
+            colour(0.98f, 0.80f, 0.25f, GLOSS); tube(body, 2, 0.040f, 6);
+        }
+        {
+            V3 band[2] = { ALONG(-0.255f), ALONG(-0.20f) };
+            colour(0.80f, 0.82f, 0.88f, GLOSS); tube(band, 2, 0.043f, 16);
+            V3 rub[4] = { ALONG(-0.30f), ALONG(-0.295f), ALONG(-0.28f), ALONG(-0.255f) };
+            float rr[4] = { 0.022f, 0.036f, 0.041f, 0.041f };
+            colour(0.98f, 0.55f, 0.60f, MATTE); tube_r(rub, 4, rr, 16);
+        }
+        {
+            V3 wood[2] = { ALONG(0.16f), ALONG(0.262f) };
+            float wr[2] = { 0.040f, 0.012f };
+            colour(0.93f, 0.78f, 0.58f, MATTE); tube_r(wood, 2, wr, 16);
+            V3 lead[2] = { ALONG(0.262f), ALONG(0.305f) };
+            float lr[2] = { 0.012f, 0.0015f };
+            colour(0.22f, 0.22f, 0.26f, GLOSS); tube_r(lead, 2, lr, 12);
+        }
+        #undef ALONG
         }
         if (D) {
         cur_grp = G_FIXED;
-        colour(0.55f, 0.95f, 1.0f, EMIS);
-        for (int k = 0; k < 3; k++) {
-            V3 p[25];
-            float ang = t * 0.8f + k * 3.14159265f / 3;
-            for (int i = 0; i < 25; i++) {
-                float a = 6.2831853f * i / 24;
-                p[i] = add(gc, v3(0.225f * cosf(a) * cosf(ang), 0.225f * sinf(a), 0.225f * cosf(a) * sinf(ang)));
-            }
-            tube(p, 25, 0.007f, 4);
-        }
         V3 pc = v3(1.06f, 0.10f + 0.05f * sinf(t * 3), -0.35f), d = v3(sinf(-0.6f), -cosf(-0.6f), 0);
         V3 tip = add(pc, mul(d, 0.31f)), sc[30];
         for (int i = 0; i < 30; i++) {
@@ -672,6 +726,7 @@ static void build(const PixelPose *ps, bool S) {
 /* how each group moves this frame (see pixel3d_draw) */
 static M3 head_rot;
 static float head_bob, globe_bob, pencil_bob;
+static M3 globe_rot;      /* the globe turning, on its tilted axis */
 static bool show_props;
 
 /* --------------------------------------------------------------- lighting */
@@ -684,7 +739,9 @@ static float ramp(float d) {   /* soft light, with a gentle shoulder */
     return 1;
 }
 
-static void light(float *r, float *g, float *b, int i) {
+static void light_n(float *r, float *g, float *b, int i, V3 normal);
+static void light(float *r, float *g, float *b, int i) { light_n(r, g, b, i, vn[i]); }
+static void light_n(float *r, float *g, float *b, int i, V3 normal) {
     static V3 key, fill, half;
     static bool once;
     if (!once) {
@@ -693,7 +750,7 @@ static void light(float *r, float *g, float *b, int i) {
         fill = norm(v3(0.7f, -0.1f, -0.5f));
         half = norm(add(key, v3(0, 0, -1)));
     }
-    V3 n = norm(vn[i]);
+    V3 n = norm(normal);
     float d = dot(n, key), f = dot(n, fill), facing = -n.z;
     if (d < 0) d = 0;
     if (f < 0) f = 0;
@@ -753,6 +810,7 @@ static void store(int i) {
 /* can this triangle ever face him (or his reflection)? (the static parts
  * hardly turn, so those that always face away are left out for good) */
 static bool can_face(int k) {
+    if (vgrp[tri[k][0]] == G_GLOBE) return true;   /* (it turns: every side faces him in time) */
     static const V3 cams[2] = { { 0, 0.15f, -4.9f }, { 0, -2.05f, -4.9f } };
     for (int c = 0; c < 2; c++)
         for (int j = 0; j < 3; j++) {
@@ -832,6 +890,21 @@ void pixel3d_build(const PixelPose *ps) {
     head_rot = rotz(0.07f * th + 0.02f * sinf(t) + 0.03f * ps->chuckle * sinf(t * 18));
     head_bob = 0.02f * sinf(t * 1.1f);
     globe_bob = 0.04f * sinf(t * 1.4f);
+    {
+        /* a turn every 20 seconds, west to east, on an axis tilted like the Earth's */
+        float a = -6.2831853f * t / 20.0f, c = cosf(a), sn = sinf(a);
+        M3 spin = { { { c, 0, sn }, { 0, 1, 0 }, { -sn, 0, c } } };
+        M3 tilt = rotz(-0.41f);
+        for (int i = 0; i < 3; i++) for (int j = 0; j < 3; j++)
+            globe_rot.m[i][j] = tilt.m[i][0] * spin.m[0][j] + tilt.m[i][1] * spin.m[1][j] + tilt.m[i][2] * spin.m[2][j];
+        /* its light stays where it is while it turns: lit again with the turned normals */
+        for (int i = globe_v0; i < globe_v1; i++) {
+            float r, g, b;
+            light_n(&r, &g, &b, i, apply(&globe_rot, vn[i]));
+            acol[i] = (u32)to8(r) << 24 | (u32)to8(g) << 16 | (u32)to8(b) << 8 | 0xFF;
+        }
+        if (globe_v1 > globe_v0) DCFlushRange(acol + globe_v0, sizeof(u32) * (globe_v1 - globe_v0));
+    }
     pencil_bob = 0.05f * sinf(t * 3);
     show_props = ps->props;
     for (int i = ns; i < nverts; i++) store(i);
@@ -854,7 +927,11 @@ static void group_mtx(int g, float mirror_y, Mtx m) {
         V3 c0 = v3(0, 0.2f, 0);
         for (int i = 0; i < 3; i++) for (int j = 0; j < 3; j++) A.m[i][j] = head_rot.m[i][j] * 1.16f;
         o = add(sub(c0, apply(&A, c0)), v3(0, -0.02f + head_bob, 0));
-    } else if (g == G_GLOBE) o = v3(0, globe_bob, 0);
+    } else if (g == G_GLOBE) {   /* turning about its centre, and bobbing */
+        V3 c = GLOBE_C;
+        A = globe_rot;
+        o = add(sub(c, apply(&A, c)), v3(0, globe_bob, 0));
+    }
     else if (g == G_PENCIL) o = v3(0, pencil_bob, 0);
     /* the reflection: y -> 2 mirror_y - y */
     if (mirror_y > -100) {
