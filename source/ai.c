@@ -4,6 +4,7 @@
 #include "net/https.h"
 #include "net/net.h"
 #include "net/thr.h"
+#include "net/storage.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -91,6 +92,69 @@ static void messages(Buf *b, const char *now, bool gemini) {
     }
 }
 
+/* The request for one model: url, headers and body; where the answer is */
+static const char *build(Buf *b_, char *url, size_t ucap, char *headers, size_t hcap, const char *use_model) {
+    Buf b = { 0 };
+    const char *path;
+    switch (brain) {
+    case AI_GEMINI:
+        snprintf(url, ucap, "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent", use_model);
+        snprintf(headers, hcap, "x-goog-api-key: %s\r\n", key);
+        buf_add(&b, "{\"systemInstruction\":{\"parts\":[{\"text\":");
+        buf_add_json_string(&b, SYSTEM);
+        buf_add(&b, "}]},\"contents\":[");
+        messages(&b, question, true);
+        buf_add(&b, "],\"generationConfig\":{\"maxOutputTokens\":2048}}");
+        path = "candidates.0.content.parts.0.text";
+        break;
+    case AI_CLAUDE:
+        snprintf(url, ucap, "https://api.anthropic.com/v1/messages");
+        snprintf(headers, hcap, "x-api-key: %s\r\nanthropic-version: 2023-06-01\r\n", key);
+        buf_addf(&b, "{\"model\":\"%s\",\"max_tokens\":600,\"system\":", use_model);
+        buf_add_json_string(&b, SYSTEM);
+        buf_add(&b, ",\"messages\":[");
+        messages(&b, question, false);
+        buf_add(&b, "]}");
+        path = "content.0.text";
+        break;
+    default:
+        snprintf(url, ucap, "https://api.openai.com/v1/chat/completions");
+        snprintf(headers, hcap, "Authorization: Bearer %s\r\n", key);
+        buf_addf(&b, "{\"model\":\"%s\",\"max_completion_tokens\":2048,\"messages\":[{\"role\":\"system\",\"content\":", use_model);
+        buf_add_json_string(&b, SYSTEM);
+        buf_add(&b, "}");
+        messages(&b, question, false);   /* (each with a comma before it) */
+        buf_add(&b, "]}");
+        path = "choices.0.message.content";
+        break;
+    }
+    *b_ = b;
+    return path;
+}
+
+/* the models to try, in turn: the one chosen, then others in case it has been renamed or retired */
+static int candidates(const char **out) {
+    static const char *more[AI_COUNT][3] = {
+        { "gemini-2.5-flash", "gemini-3.1-flash-lite", "gemini-2.5-flash-lite" },
+        { "claude-sonnet-5-5", "claude-haiku-4-5", "claude-sonnet-4-5" },
+        { "gpt-4.1-mini", "gpt-4o-mini", "gpt-5-nano" } };
+    int n = 0;
+    out[n++] = model;
+    for (int i = 0; i < 3; i++) if (strcmp(more[brain][i], model)) out[n++] = more[brain][i];
+    return n;
+}
+
+/* keeps the last problem's answer from the service on the SD card (problem.txt beside the app) */
+static void note_problem(const char *use_model, int status, const char *resp) {
+    char path[300];
+    storage_path(path, sizeof(path), "problem.txt");
+    Buf n = { 0 };
+    buf_addf(&n, "%s, model %s: HTTP %d\n\n", names[brain], use_model, status);
+    if (resp) { size_t l = strlen(resp); if (l > 6000) l = 6000; char *c = strndup(resp, l); if (c) { buf_add(&n, c); free(c); } }
+    if (!n.failed) storage_write_atomic(path, n.s, n.len);
+    buf_free(&n);
+}
+
 static void *ask_main(void *arg) {
     (void)arg;
     char err[200] = "";
@@ -102,56 +166,36 @@ static void *ask_main(void *arg) {
         state = AI_FAILED;
         return NULL;
     }
-    Buf b = { 0 };
-    char url[300], headers[400];
-    const char *path, *err_path = "error.message";
-    switch (brain) {
-    case AI_GEMINI:
-        snprintf(url, sizeof(url), "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent", model);
-        snprintf(headers, sizeof(headers), "x-goog-api-key: %s\r\n", key);
-        buf_add(&b, "{\"systemInstruction\":{\"parts\":[{\"text\":");
-        buf_add_json_string(&b, SYSTEM);
-        buf_add(&b, "}]},\"contents\":[");
-        messages(&b, question, true);
-        buf_add(&b, "],\"generationConfig\":{\"maxOutputTokens\":2048}}");
-        path = "candidates.0.content.parts.0.text";
-        break;
-    case AI_CLAUDE:
-        snprintf(url, sizeof(url), "https://api.anthropic.com/v1/messages");
-        snprintf(headers, sizeof(headers), "x-api-key: %s\r\nanthropic-version: 2023-06-01\r\n", key);
-        buf_addf(&b, "{\"model\":\"%s\",\"max_tokens\":600,\"system\":", model);
-        buf_add_json_string(&b, SYSTEM);
-        buf_add(&b, ",\"messages\":[");
-        messages(&b, question, false);
-        buf_add(&b, "]}");
-        path = "content.0.text";
-        break;
-    default:
-        snprintf(url, sizeof(url), "https://api.openai.com/v1/chat/completions");
-        snprintf(headers, sizeof(headers), "Authorization: Bearer %s\r\n", key);
-        buf_addf(&b, "{\"model\":\"%s\",\"max_completion_tokens\":2048,\"messages\":[{\"role\":\"system\",\"content\":", model);
-        buf_add_json_string(&b, SYSTEM);
-        buf_add(&b, "}");
-        messages(&b, question, false);   /* (each with a comma before it) */
-        buf_add(&b, "]}");
-        path = "choices.0.message.content";
-        break;
-    }
-    if (b.failed) { snprintf(answer, sizeof(answer), "Out of memory."); state = AI_FAILED; buf_free(&b); return NULL; }
-    char *resp = NULL;
-    int status = https_post(url, headers, b.s, b.len, &resp, NULL, 256 * 1024, NULL, err, sizeof(err));
-    buf_free(&b);
-    if (status < 0) {
-        snprintf(answer, sizeof(answer), "%s", err);
-        state = AI_FAILED;
-        return NULL;
-    }
-    if (status == 200 && json_get_string(resp, path, answer, sizeof(answer)) && answer[0]) {
-        if (!testing) { remember(true, question); remember(false, answer); }
-        state = AI_DONE;
-    } else {
+    const char *models_[5];
+    int nm = candidates(models_);
+    for (int mi = 0; mi < nm; mi++) {
+        const char *use_model = models_[mi];
+        Buf b;
+        char url[300], headers[400];
+        const char *path = build(&b, url, sizeof(url), headers, sizeof(headers), use_model);
+        if (b.failed) { snprintf(answer, sizeof(answer), "Out of memory."); state = AI_FAILED; buf_free(&b); return NULL; }
+        char *resp = NULL;
+        int status = https_post(url, headers, b.s, b.len, &resp, NULL, 256 * 1024, NULL, err, sizeof(err));
+        buf_free(&b);
+        if (status < 0) {
+            snprintf(answer, sizeof(answer), "%s", err);
+            state = AI_FAILED;
+            return NULL;
+        }
+        if (status == 200 && json_get_string(resp, path, answer, sizeof(answer)) && answer[0]) {
+            if (strcmp(use_model, model)) snprintf(model, sizeof(model), "%s", use_model);   /* (this one works: keep it) */
+            if (!testing) { remember(true, question); remember(false, answer); }
+            free(resp);
+            state = AI_DONE;
+            return NULL;
+        }
         char msg[300] = "";
-        json_get_string(resp, err_path, msg, sizeof(msg));
+        json_get_string(resp, "error.message", msg, sizeof(msg));
+        note_problem(use_model, status, resp);
+        free(resp);
+        /* a model that isn't there (any more): try the next one */
+        bool no_model = status == 404 || ((status == 400 || status == 403) && (strstr(msg, "model") || strstr(msg, "Model")) && !strstr(msg, "API key"));
+        if (no_model && mi + 1 < nm) continue;
         if (status == 401 || status == 403 || (status == 400 && strstr(msg, "API key")))
             snprintf(answer, sizeof(answer), "%s didn't accept the key. (%s)", names[brain], msg[0] ? msg : "error");
         else if (status == 429)
@@ -161,8 +205,9 @@ static void *ask_main(void *arg) {
         else
             snprintf(answer, sizeof(answer), "%s answered with error %d. %s", names[brain], status, msg);
         state = AI_FAILED;
+        return NULL;
     }
-    free(resp);
+    state = AI_FAILED;
     return NULL;
 }
 
@@ -195,3 +240,4 @@ bool ai_test(void) {
 
 AiState ai_state(void) { return state; }
 const char *ai_answer(void) { return answer; }
+const char *ai_model(void) { return model; }

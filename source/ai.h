@@ -21,3 +21,4 @@ bool ai_test(void);                      /* starts a quick check that the key wo
 AiState ai_state(void);
 const char *ai_answer(void);             /* when AI_DONE: the reply (CP-1252), or the problem when AI_FAILED */
 void ai_forget(void);                    /* a new conversation */
+const char *ai_model(void);              /* the model in use (it can change if the usual one has gone) */
