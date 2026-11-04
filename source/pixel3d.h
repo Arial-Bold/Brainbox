@@ -1,4 +1,4 @@
-/* pixel3d.h - Professor Pixel himself: his head in 3D, posed, lit and drawn
+/* pixel3d.h - Professor Scotty himself: his head in 3D, posed, lit and drawn
  * with the GPU (called from the drawing thread, in ui.c). */
 #pragma once
 #include <stdbool.h>

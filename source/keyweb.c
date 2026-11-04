@@ -72,8 +72,8 @@ static void page(int fd, const char *note) {
     AiBrain b = for_brain;
     static char body[3000];
     snprintf(body, sizeof(body),
-             "<!doctype html><html><head><title>Professor Pixel: sign in</title>%s</head><body><main>"
-             "<h1>Lend Professor Pixel a brain</h1><p>He'll use <b>%s</b>.</p>%s"
+             "<!doctype html><html><head><title>Professor Scotty: sign in</title>%s</head><body><main>"
+             "<h1>Lend Professor Scotty a brain</h1><p>He'll use <b>%s</b>.</p>%s"
              "<div class=card><b>1.</b> Make an API key at <a href='%s' target=_blank>%s</a> "
              "(sign in there with your own account).</div>"
              "<div class=card><b>2.</b> Paste the key here and press Send.<form method=post action='/key'>"
@@ -121,7 +121,7 @@ static void handle(int fd) {
         for (char *q = k; *q && o < (int)sizeof(clean) - 1; q++)
             if (isalnum((unsigned char)*q) || *q == '-' || *q == '_' || *q == '.') clean[o++] = *q;
         clean[o] = 0;
-        if (!accepting) page(fd, "<div class=card>Professor Pixel isn't waiting for a key right now.</div>");
+        if (!accepting) page(fd, "<div class=card>Professor Scotty isn't waiting for a key right now.</div>");
         else if (o < 20) page(fd, "<div class=card>That doesn't look like a whole key: please paste it again.</div>");
         else {
             snprintf(got_key, sizeof(got_key), "%s", clean);

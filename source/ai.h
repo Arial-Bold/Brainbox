@@ -1,4 +1,4 @@
-/* ai.h - Professor Pixel's "brain": Google Gemini, Claude (Anthropic) or
+/* ai.h - Professor Scotty's "brain": Google Gemini, Claude (Anthropic) or
  * ChatGPT (OpenAI), or open models (Llama and others) on Groq, reached directly over HTTPS with the person's own API
  * key. The conversation so far goes with each question, so he remembers what
  * was said (the last several turns). A question runs on a thread of its own. */

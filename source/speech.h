@@ -1,4 +1,4 @@
-/* speech.h - Professor Pixel's voice: Flite (the cmu_us_awb voice, a Scottish accent) on the
+/* speech.h - Professor Scotty's voice: Flite (the cmu_us_awb voice, a Scottish accent) on the
  * GameCube itself. A reply is spoken a sentence at a time: while the first
  * sentence plays, the next ones are made. The speech waits in ARAM (the
  * audio memory), so long replies take almost no main memory, and is streamed

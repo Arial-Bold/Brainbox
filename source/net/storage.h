@@ -1,4 +1,4 @@
-/* storage.h - the SD card, and where Professor Pixel keeps his own files:
+/* storage.h - the SD card, and where Professor Scotty keeps his own files:
  * the folder his .dol was started from, or apps/pixel. */
 #pragma once
 #include <stdbool.h>

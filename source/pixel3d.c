@@ -1,6 +1,6 @@
 /* pixel3d.c - see pixel3d.h.
  *
- * Professor Pixel is built each frame from simple smooth shapes (stretched
+ * Professor Scotty is built each frame from simple smooth shapes (stretched
  * spheres and tubes) in his pose of the moment, lit on the CPU a vertex at a
  * time, the way the mock-ups were: a soft light ramp from a warm key light,
  * a cool fill, a blue glow around his edges, a shine on the glossy parts

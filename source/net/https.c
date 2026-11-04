@@ -103,7 +103,7 @@ static int open_stream(Stream *s, const char *start_url, const char *accept, vol
         if (!conn_open(&s->c, host, port, tls, cancel, NULL, err, errlen)) return -1;
         static char req[URL_CAP + 512];
         int n = snprintf(req, sizeof(req),
-                         "GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: ProfessorPixel/%s (Nintendo GameCube)\r\n"
+                         "GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: ProfessorScotty/%s (Nintendo GameCube)\r\n"
                          "Accept: %s\r\nAccept-Encoding: identity\r\nConnection: close\r\n\r\n",
                          path, host, APP_VERSION, accept ? accept : "*/*");
         if (!conn_write_all(&s->c, req, (size_t)n)) {
@@ -240,7 +240,7 @@ int https_post(const char *url, const char *headers, const char *body, size_t bo
     if (!conn_open(&s.c, host, port, tls, cancel, NULL, err, errlen)) return -1;
     static char head[URL_CAP + 2048];
     int n = snprintf(head, sizeof(head),
-                     "POST %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: ProfessorPixel/%s (Nintendo GameCube)\r\n"
+                     "POST %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: ProfessorScotty/%s (Nintendo GameCube)\r\n"
                      "Accept: application/json\r\nAccept-Encoding: identity\r\nConnection: close\r\n"
                      "%sContent-Length: %u\r\n%s\r\n",
                      path, host, APP_VERSION,

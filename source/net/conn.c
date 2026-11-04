@@ -1,6 +1,6 @@
 /* conn.c - TCP and TLS streams. TLS uses mbedTLS 3.6 (TLS 1.2 and 1.3) with
  * full certificate-chain and hostname verification against a CA bundle on SD
- * (cacert.pem beside Professor Pixel, or another app's copy). From CubeBrowser.
+ * (cacert.pem beside Professor Scotty, or another app's copy). From CubeBrowser.
  * GameCube only. */
 #include "conn.h"
 #include "netio.h"
@@ -75,7 +75,7 @@ bool tls_global_init(char *err, size_t errlen) {
 
     mbedtls_entropy_init(&ent);
     mbedtls_ctr_drbg_init(&drbg);
-    const char *pers = "Professor Pixel TLS";
+    const char *pers = "Professor Scotty TLS";
     int r = mbedtls_ctr_drbg_seed(&drbg, mbedtls_entropy_func, &ent, (const unsigned char *)pers, strlen(pers));
     if (r != 0) {
         snprintf(err, errlen, "Random generator failed (-0x%04X)", -r);
@@ -180,7 +180,7 @@ bool conn_open(Conn *c, const char *host, unsigned short port, bool tls, volatil
 
     if (!inited && !tls_global_init(err, errlen)) { conn_close(c); return false; }
     if (!ca_ok) {
-        snprintf(err, errlen, "The certificate file (cacert.pem, beside Professor Pixel) is missing from the SD card.");
+        snprintf(err, errlen, "The certificate file (cacert.pem, beside Professor Scotty) is missing from the SD card.");
         conn_close(c);
         return false;
     }

@@ -1,5 +1,5 @@
 /****************************************************************************
-* ui.h - Professor Pixel's screens, drawn on a thread of their own: the
+* ui.h - Professor Scotty's screens, drawn on a thread of their own: the
 * stage (the professor floating in his beam of light, the conversation, the
 * caption along the bottom), the panels over it (choosing an AI, signing
 * in) and the Settings page. The main thread sets what's shown with these

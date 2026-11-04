@@ -86,7 +86,7 @@ bool ui_settings_save(void) {
 	if (!settings_file[0]) return false;
 	static char out[2400];
 	int n = snprintf(out, sizeof(out),
-		"# Professor Pixel's settings\n"
+		"# Professor Scotty's settings\n"
 		"display.resolution=%d\ndisplay.widescreen=%d\ndisplay.full_width=%d\ndisplay.overscan=%d\n"
 		"sound.voice=%d\nsound.menu=%d\nchat.captions=%d\nbrain=%s\nexit.launcher=%s\n",
 		ui_set.resolution, ui_set.widescreen, ui_set.full_width, ui_set.overscan,
@@ -947,7 +947,7 @@ static void chat(void) {
 		sc.him_more = n - first - shown;
 		float h = 34 + shown * 18;
 		bubble_frame(x, y, w, h, true);
-		text(x + 14, y + 13, "Professor Pixel", 10, rgba(140, 220, 255, 255), 0, 0);
+		text(x + 14, y + 13, "Professor Scotty", 10, rgba(140, 220, 255, 255), 0, 0);
 		for (int i = 0; i < shown; i++) text(x + 14, y + 30 + i * 18, lines[first + i], 13, TEXT, 0, w - 24);
 		if (sc.him_more > 0) tri(x + w - 20, y + h - 12, x + w - 12, y + h - 12, x + w - 16, y + h - 6, GOLD);
 		if (first > 0) tri(x + w - 20, y + 14, x + w - 12, y + 14, x + w - 16, y + 8, GOLD);

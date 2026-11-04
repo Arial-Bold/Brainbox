@@ -70,7 +70,7 @@ static const char *const swaps[][2] = {
     { "ahh", "ah" },           { "aah", "ah" },          { "ohh", "oh" },         { "uhh", "uh" },
     { "shh", "shush" },        { "psst", "hey" },        { "brr", "burr" },       { "tsk", "tisk" },
     { "pfft", "puff" },        { "soo", "so" },         { "noo", "no" },
-    { "yess", "yes" },         { "wee", "whee" },        { "chatgpt", "chat G P T" }, { "ai", "A I" },
+    { "yess", "yes" },        { "chatgpt", "chat G P T" }, { "ai", "A I" },
 };
 
 static bool word_char(unsigned char c) { return isalnum(c) || c == '\'' || c >= 0xC0; }

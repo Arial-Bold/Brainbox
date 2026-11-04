@@ -1,4 +1,4 @@
-/* main.c - Professor Pixel: a hologram professor on the GameCube who answers
+/* main.c - Professor Scotty: a hologram professor on the GameCube who answers
  * your questions with the AI of your choice (Google Gemini, Claude or
  * ChatGPT, or open models on Groq) and speaks his answers aloud.
  *
@@ -142,7 +142,7 @@ static void use_brain(void) {
 }
 
 static void save_settings(void) {
-	if (!storage_ok()) { ui_toast("No SD card: these settings last until Professor Pixel closes."); return; }
+	if (!storage_ok()) { ui_toast("No SD card: these settings last until Professor Scotty closes."); return; }
 	if (!ui_settings_save()) ui_toast("Couldn't save the settings to the SD card.");
 }
 
@@ -264,7 +264,7 @@ static bool choose_brain(void) {
 	int row = 0;
 	for (int i = 0; i < AI_COUNT; i++) if (order[i] == ui_set.brain) row = i;
 	for (;;) {
-		ui_overlay(UI_OVERLAY_BRAIN, "Which AI should Professor Pixel use?");
+		ui_overlay(UI_OVERLAY_BRAIN, "Which AI should Professor Scotty use?");
 		for (int i = 0; i < AI_COUNT; i++) {
 			AiBrain b = order[i];
 			bool free_ = b == AI_GROQ || b == AI_GEMINI;
@@ -329,12 +329,12 @@ static void settings_help(int row) {
 		{ "Screen", "Choose 16:9 if your TV stretches the picture to fill the screen." },
 		{ "Picture width", "Full fills the width of the TV picture. Standard leaves a border." },
 		{ "Overscan", "Pulls everything in from the edges if your TV cuts them off." },
-		{ "Voice volume", "How loud Professor Pixel speaks. Off for none." },
+		{ "Voice volume", "How loud Professor Scotty speaks. Off for none." },
 		{ "Menu sounds", "How loud the sounds are when you move and choose. Off for none." },
 		{ "Captions", "Shows his answers in a bubble as he speaks." },
 		{ "Brain", "Which AI he uses: Groq, Google Gemini, Claude or ChatGPT. A to change or sign in." },
 		{ "Launcher", "The program at the root of the SD card that Exit to Launcher starts." },
-		{ "Exit to Launcher", "Leaves Professor Pixel." },
+		{ "Exit to Launcher", "Leaves Professor Scotty." },
 	};
 	ui_status(help[row][0], help[row][1]);
 	if (row >= S_BRAIN && row != S_LAUNCHER) hints(3, "S:Move", "A:Select", "B:Back");
@@ -721,7 +721,7 @@ int main(int argc, char **argv) {
 		ui_chuckle();
 		say("", ai_state() == AI_DONE ? ai_answer() : "Ah! That's much better. Ask me anything!");
 	} else {
-		say("", "Hello there! I'm Professor Pixel. What would you like to know today?");
+		say("", "Hello there! I'm Professor Scotty. What would you like to know today?");
 	}
 	has_mic = listen_present();
 	conversation();
