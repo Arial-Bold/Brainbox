@@ -22,3 +22,12 @@ AiState ai_state(void);
 const char *ai_answer(void);             /* when AI_DONE: the reply (CP-1252), or the problem when AI_FAILED */
 void ai_forget(void);                    /* a new conversation */
 const char *ai_model(void);              /* the model in use (it can change if the usual one has gone) */
+
+/* Listening (the microphone): what was said goes to an AI that can hear
+ * (Gemini or ChatGPT: e, with its key and model, "" = the usual one) to be
+ * written down, then on to the brain in use as the question. pcm stays in
+ * use until the state isn't AI_BUSY. */
+bool ai_can_hear(AiBrain b);
+void ai_hear(const short *pcm, int n, int rate, AiBrain e, const char *key, const char *model);
+const char *ai_heard(void);      /* what was heard, once it's known (NULL until then) */
+bool ai_heard_nothing(void);     /* AI_FAILED because no words were heard */

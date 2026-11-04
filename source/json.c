@@ -25,6 +25,35 @@ void buf_add(Buf *b, const char *s) {
     b->len += n;
 }
 
+void buf_add_mem(Buf *b, const void *data, size_t n) {
+    grow(b, n);
+    if (b->failed) return;
+    memcpy(b->s + b->len, data, n);
+    b->len += n;
+    b->s[b->len] = 0;
+}
+
+void buf_add_base64(Buf *b, const void *data, size_t n) {
+    static const char A[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    grow(b, (n + 2) / 3 * 4);
+    if (b->failed) return;
+    const unsigned char *p = data;
+    char *o = b->s + b->len;
+    size_t i = 0;
+    for (; i + 2 < n; i += 3) {
+        unsigned v = p[i] << 16 | p[i + 1] << 8 | p[i + 2];
+        *o++ = A[v >> 18]; *o++ = A[(v >> 12) & 63]; *o++ = A[(v >> 6) & 63]; *o++ = A[v & 63];
+    }
+    if (i < n) {
+        unsigned v = p[i] << 16 | (i + 1 < n ? p[i + 1] << 8 : 0);
+        *o++ = A[v >> 18]; *o++ = A[(v >> 12) & 63];
+        *o++ = i + 1 < n ? A[(v >> 6) & 63] : '=';
+        *o++ = '=';
+    }
+    *o = 0;
+    b->len = (size_t)(o - b->s);
+}
+
 void buf_addf(Buf *b, const char *fmt, ...) {
     char tmp[512];
     va_list ap;

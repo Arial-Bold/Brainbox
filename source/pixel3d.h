@@ -20,9 +20,13 @@ typedef struct { float x0, y0, x1, y1; } PixelBox;   /* where he was drawn */
 
 /* Makes him in this pose (shape and lighting); once a frame. */
 void pixel3d_build(const PixelPose *pose);
-/* Draws him with GX_VTXFMT1 (position x, y, z; colour; texture coordinate),
- * which the caller sets up, with the depth test on: his middle at x, y in
- * the 640x480 layout, scale 1 as in the mock-ups. mirror_y > -100: upside
- * down about that height in his own space (the floor reflection). */
+/* The visible part of the 640x480 layout (as the 2D drawing's projection
+ * has it), and whether the depth test is turned round (display.depth_flip). */
+void pixel3d_view(float l, float t, float r, float b, bool depth_flip);
+/* Draws him with the GPU: his middle at x, y in the 640x480 layout, scale 1
+ * as in the mock-ups. mirror_y > -100: upside down about that height in his
+ * own space (the floor reflection). It changes the projection, the vertex
+ * description (GX_VTXFMT2), the TEV, the matrix and the depth test: the
+ * caller sets its own back up afterwards. */
 void pixel3d_draw(float x, float y, float scale, float alpha, float mirror_y, PixelBox *box);
 int  pixel3d_triangles(void);

@@ -118,6 +118,8 @@ static struct {
 	u32 chuckle_at;
 	int cap_kind;
 	char cap[160];
+	float listen;      /* the microphone's loudness, 0..1 */
+	float listen_shown;
 	char typing[400];
 	bool masked;
 	char you[400], him[4000];
@@ -155,6 +157,7 @@ void ui_pose(float think, float brows, bool props) { L(); sc.think = think; sc.b
 void ui_chuckle(void) { L(); sc.chuckle_at = now_ms(); U(); }
 void ui_fog(float a) { L(); sc.fog = a; U(); }
 void ui_caption(int kind, const char *t) { L(); sc.cap_kind = kind; cpy(sc.cap, t, sizeof(sc.cap)); U(); }
+void ui_listen_level(float lv) { sc.listen = lv; }
 void ui_typing(const char *t, bool masked) { L(); cpy(sc.typing, t, sizeof(sc.typing)); sc.masked = masked; U(); }
 void ui_chat(const char *you, const char *him) { L(); cpy(sc.you, you, sizeof(sc.you)); cpy(sc.him, him, sizeof(sc.him)); sc.him_scroll = 0; U(); }
 void ui_chat_scroll(int lines) {
@@ -605,7 +608,7 @@ static void toast_draw(void) {
 	float t = (now_ms() - sc.toast_at) / 1000.0f;
 	float a = clamp01(t / 0.2f) * clamp01((3.2f - t) / 0.4f);
 	if (a <= 0) return;
-	float w = text_width(sc.toast, 13) + 40, x = 320 - w / 2, y = 64;
+	float w = text_width(sc.toast, 13) + 40, x = 320 - w / 2, y = 22;   /* clear of the top edge (TVs cut a little off) */
 	outline(x - 1, y - 1, w + 2, 34 + 2, 4, 1, rgba(11, 11, 32, (u8)(255 * a)));
 	rrect_v(x, y, w, 34, 3, rgba(42, 34, 140, (u8)(240 * a)), rgba(59, 44, 182, (u8)(240 * a)));
 	outline(x, y, w, 34, 3, 1, rgba(175, 175, 255, (u8)(153 * a)));
@@ -631,27 +634,79 @@ static void soft_blob(float cx, float cy, float rx, float ry, Color c) {
 	GX_End();
 }
 
+/* The floor grid: drawn once into a texture, with soft (anti-aliased) lines
+ * of the right thickness everywhere, then laid over the floor with the GPU's
+ * filtering, so the lines hold steady and never break up into dots on the
+ * TV (thin lines drawn as triangles step and shimmer). */
+#define FLOOR_TW 1024
+#define FLOOR_TH 144
+#define FLOOR_SPAN 1280.0f   /* layout units across the texture (centred on him) */
+static u8 floor_tex_data[FLOOR_TW * FLOOR_TH] ATTRIBUTE_ALIGN(32);
+static GXTexObj floor_tex;
+static bool floor_ready;
+
+static void floor_make(void) {
+	const float bottom = 480.0f, depth = bottom - HORIZON, tx = FLOOR_SPAN / FLOOR_TW;
+	/* the lines across: further apart as they come nearer */
+	float cy[6], ca[6];
+	for (int k = 0; k < 6; k++) {
+		float d = 1.0f / (1 + (5 - k) * 0.9f);
+		cy[k] = HORIZON + 6 + (depth - 6) * d + 1;
+		ca[k] = 0.15f + 0.6f * d;
+	}
+	for (int y = 0; y < FLOOR_TH; y++) {
+		float Y = HORIZON + y + 0.5f, s = (Y - HORIZON) / depth;
+		float spacing = 30 + 90 * s, half = 1.0f + 0.5f * s, fade = 0.8f * (s > 1.1f ? 1.1f : s);
+		float across = 0;
+		for (int k = 0; k < 6; k++) {
+			float c = 1.5f - fabsf(Y - cy[k]);           /* 2 units thick, soft edged */
+			c = c < 0 ? 0 : c > 1 ? 1 : c;
+			if (c * ca[k] > across) across = c * ca[k];
+		}
+		for (int x = 0; x < FLOOR_TW; x++) {
+			float X = (x + 0.5f) * tx - FLOOR_SPAN / 2;
+			float cov = 0;
+			int k0 = (int)floorf(X / spacing);
+			for (int k = k0 - 1; k <= k0 + 2; k++) {
+				if (k < -10 || k > 10) continue;
+				/* the distance to this line square on to it (they lean outwards) */
+				float slope = k * 90.0f / depth;
+				float dist = fabsf(X - k * spacing) / sqrtf(1 + slope * slope);
+				float c = half + 0.5f - dist;
+				c = c < 0 ? 0 : c > 1 ? 1 : c;
+				if (c > cov) cov = c;
+			}
+			float v = cov * fade;
+			if (across > v) v = across;
+			/* (I8 is stored in 8 x 4 blocks) */
+			int bx = x >> 3, by = y >> 2;
+			int idx = (by * (FLOOR_TW / 8) + bx) * 32 + (y & 3) * 8 + (x & 7);
+			floor_tex_data[idx] = (u8)(v * 255 + 0.5f);
+		}
+	}
+	DCFlushRange(floor_tex_data, sizeof(floor_tex_data));
+	GX_InitTexObj(&floor_tex, floor_tex_data, FLOOR_TW, FLOOR_TH, GX_TF_I8, GX_CLAMP, GX_CLAMP, GX_FALSE);
+	GX_InitTexObjLOD(&floor_tex, GX_LINEAR, GX_LINEAR, 0, 0, 0, GX_FALSE, GX_FALSE, GX_ANISO_1);
+	floor_ready = true;
+}
+
+static void floor_draw(float cx) {
+	if (!floor_ready) floor_make();
+	mode_tex(&floor_tex, false);
+	Color line = rgba(52, 52, 120, 255);
+	float x0 = cx - FLOOR_SPAN / 2, x1 = cx + FLOOR_SPAN / 2, y0 = HORIZON, y1 = HORIZON + FLOOR_TH;
+	GX_Begin(GX_QUADS, GX_VTXFMT0, 4);
+	vtx(x0, y0, line, 0, 0); vtx(x1, y0, line, 1, 0); vtx(x1, y1, line, 1, 1); vtx(x0, y1, line, 0, 1);
+	GX_End();
+	/* (below the texture, if overscan shows more: plain floor) */
+}
+
 static void room(float cx) {
 	float fx = vl, fy = vt, fw = vr - vl, fh = vb - vt;
 	rect_v(fx, fy, fw, HORIZON - fy, rgba(7, 7, 18, 255), rgba(14, 12, 38, 255));
 	rect_v(fx, HORIZON, fw, fy + fh - HORIZON, rgba(10, 9, 30, 255), rgba(16, 13, 40, 255));
-	/* the floor: the apps' grid, in perspective */
-	/* (lines at least two pixels thick, so they hold steady on the TV) */
-	Color line = rgba(52, 52, 120, 255);
-	float y1 = fy + fh;
-	mode_color();
-	for (int k = -10; k <= 10; k++) {   /* lines running away from us */
-		float x0 = cx + k * 30.0f, x1 = cx + k * 120.0f;
-		GX_Begin(GX_QUADS, GX_VTXFMT0, 4);
-		vtx(x0 - 1, HORIZON, alpha(line, 0), 0, 0); vtx(x0 + 1, HORIZON, alpha(line, 0), 0, 0);
-		vtx(x1 + 1.5f, y1, alpha(line, 0.8f), 0, 0); vtx(x1 - 1.5f, y1, alpha(line, 0.8f), 0, 0);
-		GX_End();
-	}
-	for (int k = 0; k < 6; k++) {   /* and across, further apart as they come nearer */
-		float d = 1.0f / (1 + (5 - k) * 0.9f);
-		float y = floorf(HORIZON + 6 + (y1 - HORIZON - 6) * d);
-		rect(fx, y, fw, 2, alpha(line, 0.15f + 0.6f * d));
-	}
+	/* the floor: the apps' grid, in perspective, as a smooth (filtered) picture */
+	floor_draw(cx);
 	/* the pedestal: a glowing ring on the floor */
 	float py = HORIZON + 30;
 	soft_blob(cx, py, 125, 17, rgba(20, 30, 80, 200));
@@ -784,15 +839,12 @@ static void pose_update(float t) {
 	pose.props = sc.props && !(sc.side && sc.him[0] && ui_set.captions);   /* (out of the way of his answer) */
 }
 
+static void frame_setup(void);
 static void head_pass(float x, float alpha_k, float mirror, PixelBox *box) {
-	/* 3D: x, y, z positions; depth test on */
-	GX_SetVtxAttrFmt(GX_VTXFMT1, GX_VA_POS, GX_POS_XYZ, GX_F32, 0);
-	GX_SetVtxAttrFmt(GX_VTXFMT1, GX_VA_CLR0, GX_CLR_RGBA, GX_RGBA8, 0);
-	GX_SetVtxAttrFmt(GX_VTXFMT1, GX_VA_TEX0, GX_TEX_ST, GX_F32, 0);
-	mode_color();
-	GX_SetZMode(GX_TRUE, ui_set.depth_flip ? GX_GEQUAL : GX_LEQUAL, GX_TRUE);
+	/* 3D, on the GPU (see pixel3d.c), then back to drawing in 2D */
+	pixel3d_view(vl, vt, vr, vb, ui_set.depth_flip);
 	pixel3d_draw(x, 240, 1, alpha_k, mirror, box);
-	GX_SetZMode(GX_FALSE, GX_ALWAYS, GX_FALSE);
+	frame_setup();
 }
 
 static void stage(void) {
@@ -873,7 +925,7 @@ static void chat(void) {
 	static char lines[64][160];
 	float x = 350, w = 268, y = 64;
 	if (sc.you[0]) {
-		int n = wrap(sc.you, 13, w - 28, lines, 3);
+		int n = wrap(sc.you, 13, w - 58, lines, 3);
 		float h = 26 + n * 17;
 		bubble_frame(x + 30, y, w - 30, h, false);
 		text(x + 44, y + 12, "You", 10, rgba(160, 175, 200, 255), 0, 0);
@@ -911,11 +963,16 @@ static void caption(void) {
 		for (int i = 0; i < 3; i++) circle(tx + 4 + i * 11, y + 16, 3.5f, rgba(130, 220, 255, (u8)(110 + 120 * (0.5f + 0.5f * sinf(t * 6 - i)))));
 		tx += 40;
 	} else if (sc.cap_kind == UI_CAP_LISTEN) {
-		for (int i = 0; i < 7; i++) {
-			float h = 3 + 9 * fabsf(sinf(t * 7 + i * 1.7f));
-			rrect_v(tx + i * 6, y + 16 - h, 3, h * 2, 1, rgba(130, 220, 255, 230), rgba(130, 220, 255, 230));
+		/* a red "recording" light, and bars that follow how loud it is */
+		circle(tx + 4, y + 16, 4.5f, rgba(255, 70, 80, (u8)(170 + 85 * (0.5f + 0.5f * sinf(t * 5)))));
+		sc.listen_shown += (sc.listen - sc.listen_shown) * 0.35f;
+		float lv = sc.listen_shown;
+		for (int i = 0; i < 9; i++) {
+			float shape = 0.55f + 0.45f * fabsf(sinf(t * 9 + i * 1.9f));
+			float hh = 1.5f + 10.5f * lv * shape * (1 - fabsf(i - 4) / 6.0f);
+			rrect_v(tx + 16 + i * 5, y + 16 - hh, 3, hh * 2, 1, rgba(130, 220, 255, 230), rgba(130, 220, 255, 230));
 		}
-		tx += 52;
+		tx += 70;
 	}
 	if (sc.cap_kind == UI_CAP_TYPE) {
 		char shown[420];

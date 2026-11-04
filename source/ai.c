@@ -155,17 +155,18 @@ static void note_problem(const char *use_model, int status, const char *resp) {
     buf_free(&n);
 }
 
-static void *ask_main(void *arg) {
-    (void)arg;
-    char err[200] = "";
-    /* the network first (it starts once) */
+/* the network (it starts once); false (with the problem as the answer) if it isn't there */
+static bool network(void) {
     net_start();
     while (net_state() == NET_STARTING) thr_sleep_ms(50);
-    if (net_state() != NET_UP) {
-        snprintf(answer, sizeof(answer), "%s", net_message()[0] ? net_message() : "There's no network. Is the network adapter connected?");
-        state = AI_FAILED;
-        return NULL;
-    }
+    if (net_state() == NET_UP) return true;
+    snprintf(answer, sizeof(answer), "%s", net_message()[0] ? net_message() : "There's no network. Is the network adapter connected?");
+    state = AI_FAILED;
+    return false;
+}
+
+static void run_question(void) {
+    char err[200] = "";
     const char *models_[5];
     int nm = candidates(models_);
     for (int mi = 0; mi < nm; mi++) {
@@ -173,21 +174,21 @@ static void *ask_main(void *arg) {
         Buf b;
         char url[300], headers[400];
         const char *path = build(&b, url, sizeof(url), headers, sizeof(headers), use_model);
-        if (b.failed) { snprintf(answer, sizeof(answer), "Out of memory."); state = AI_FAILED; buf_free(&b); return NULL; }
+        if (b.failed) { snprintf(answer, sizeof(answer), "Out of memory."); state = AI_FAILED; buf_free(&b); return; }
         char *resp = NULL;
         int status = https_post(url, headers, b.s, b.len, &resp, NULL, 256 * 1024, NULL, err, sizeof(err));
         buf_free(&b);
         if (status < 0) {
             snprintf(answer, sizeof(answer), "%s", err);
             state = AI_FAILED;
-            return NULL;
+            return;
         }
         if (status == 200 && json_get_string(resp, path, answer, sizeof(answer)) && answer[0]) {
             if (strcmp(use_model, model)) snprintf(model, sizeof(model), "%s", use_model);   /* (this one works: keep it) */
             if (!testing) { remember(true, question); remember(false, answer); }
             free(resp);
             state = AI_DONE;
-            return NULL;
+            return;
         }
         char msg[300] = "";
         json_get_string(resp, "error.message", msg, sizeof(msg));
@@ -205,24 +206,139 @@ static void *ask_main(void *arg) {
         else
             snprintf(answer, sizeof(answer), "%s answered with error %d. %s", names[brain], status, msg);
         state = AI_FAILED;
-        return NULL;
+        return;
     }
     state = AI_FAILED;
+    return;
+}
+
+static void *ask_main(void *arg) {
+    (void)arg;
+    if (network()) run_question();
     return NULL;
 }
 
-static bool start(void) {
+/* ------------------------------------------------------------ listening */
+
+static AiBrain ear;
+static char ear_key[200], ear_model[80];
+static const short *sound;
+static int nsound, sound_rate;
+static char heard[1200];
+static volatile bool heard_ready, heard_nothing;
+
+/* the recording as a .wav file (16-bit, mono) */
+static void add_wav(Buf *b, bool base64) {
+    size_t data = (size_t)nsound * 2, total = 44 + data;
+    unsigned char *w = malloc(total);
+    if (!w) { b->failed = true; return; }
+    #define LE32(p, v) do { (p)[0] = (v) & 255; (p)[1] = ((v) >> 8) & 255; (p)[2] = ((v) >> 16) & 255; (p)[3] = ((v) >> 24) & 255; } while (0)
+    memcpy(w, "RIFF", 4); LE32(w + 4, (unsigned)(total - 8)); memcpy(w + 8, "WAVEfmt ", 8);
+    LE32(w + 16, 16u); w[20] = 1; w[21] = 0; w[22] = 1; w[23] = 0;
+    LE32(w + 24, (unsigned)sound_rate); LE32(w + 28, (unsigned)sound_rate * 2); w[32] = 2; w[33] = 0; w[34] = 16; w[35] = 0;
+    memcpy(w + 36, "data", 4); LE32(w + 40, (unsigned)data);
+    for (int i = 0; i < nsound; i++) { w[44 + i * 2] = sound[i] & 255; w[45 + i * 2] = (sound[i] >> 8) & 255; }
+    #undef LE32
+    if (base64) buf_add_base64(b, w, total);
+    else buf_add_mem(b, w, total);
+    free(w);
+}
+
+/* writes down what was said; false (with the problem as the answer) if it couldn't */
+static bool transcribe(void) {
+    char url[300], headers[500], err[200] = "";
+    const char *path;
+    static const char *BOUNDARY = "PixelSaid7d1f0c3a";
+    const char *try_models[3];
+    int nm = 0;
+    if (ear == AI_GEMINI) {
+        try_models[nm++] = ear_model[0] ? ear_model : models[AI_GEMINI];
+        if (strcmp(try_models[0], "gemini-2.5-flash")) try_models[nm++] = "gemini-2.5-flash";
+        path = "candidates.0.content.parts.0.text";
+    } else {
+        try_models[nm++] = "gpt-4o-mini-transcribe";
+        try_models[nm++] = "whisper-1";
+        path = "text";
+    }
+    for (int mi = 0; mi < nm; mi++) {
+        Buf b = { 0 };
+        if (ear == AI_GEMINI) {
+            snprintf(url, sizeof(url), "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent", try_models[mi]);
+            snprintf(headers, sizeof(headers), "x-goog-api-key: %s\r\n", ear_key);
+            buf_add(&b, "{\"contents\":[{\"role\":\"user\",\"parts\":[{\"text\":");
+            buf_add_json_string(&b, "Write down exactly what the person says in this recording, as plain text, with normal "
+                                    "punctuation. Reply with only their words. If no one speaks, reply with just: -");
+            buf_add(&b, "},{\"inlineData\":{\"mimeType\":\"audio/wav\",\"data\":\"");
+            add_wav(&b, true);
+            buf_add(&b, "\"}}]}],\"generationConfig\":{\"maxOutputTokens\":400}}");
+        } else {
+            snprintf(url, sizeof(url), "https://api.openai.com/v1/audio/transcriptions");
+            snprintf(headers, sizeof(headers), "Content-Type: multipart/form-data; boundary=%s\r\nAuthorization: Bearer %s\r\n", BOUNDARY, ear_key);
+            buf_addf(&b, "--%s\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n%s\r\n", BOUNDARY, try_models[mi]);
+            buf_addf(&b, "--%s\r\nContent-Disposition: form-data; name=\"language\"\r\n\r\nen\r\n", BOUNDARY);
+            buf_addf(&b, "--%s\r\nContent-Disposition: form-data; name=\"file\"; filename=\"question.wav\"\r\nContent-Type: audio/wav\r\n\r\n", BOUNDARY);
+            add_wav(&b, false);
+            buf_addf(&b, "\r\n--%s--\r\n", BOUNDARY);
+        }
+        if (b.failed) { buf_free(&b); snprintf(answer, sizeof(answer), "Out of memory."); return false; }
+        char *resp = NULL;
+        int status = https_post(url, headers, b.s, b.len, &resp, NULL, 64 * 1024, NULL, err, sizeof(err));
+        buf_free(&b);
+        if (status < 0) { snprintf(answer, sizeof(answer), "%s", err); return false; }
+        if (status == 200 && json_get_string(resp, path, heard, sizeof(heard))) {
+            free(resp);
+            /* tidy: no spaces or line breaks round it */
+            char *p = heard;
+            while (*p == ' ' || *p == '\n' || *p == '\r' || *p == '"') p++;
+            memmove(heard, p, strlen(p) + 1);
+            size_t l = strlen(heard);
+            while (l && (heard[l - 1] == ' ' || heard[l - 1] == '\n' || heard[l - 1] == '\r' || heard[l - 1] == '"')) heard[--l] = 0;
+            for (p = heard; *p; p++) if (*p == '\n' || *p == '\r') *p = ' ';
+            if (!strcmp(heard, "-") || !strcmp(heard, ".") || !heard[0]) heard[0] = 0;
+            return true;
+        }
+        char msg[300] = "";
+        json_get_string(resp, "error.message", msg, sizeof(msg));
+        AiBrain was = brain; brain = ear; note_problem(try_models[mi], status, resp); brain = was;
+        free(resp);
+        bool no_model = status == 404 || ((status == 400 || status == 403) && (strstr(msg, "model") || strstr(msg, "Model")) && !strstr(msg, "API key"));
+        if (no_model && mi + 1 < nm) continue;
+        if (status == 401 || status == 403 || (status == 400 && strstr(msg, "API key")))
+            snprintf(answer, sizeof(answer), "%s didn't accept the key for listening. (%s)", names[ear], msg[0] ? msg : "error");
+        else if (status == 429)
+            snprintf(answer, sizeof(answer), "%s says that's too much listening for now: try again in a minute. (%s)", names[ear], msg);
+        else
+            snprintf(answer, sizeof(answer), "%s couldn't write down what you said: error %d. %s", names[ear], status, msg);
+        return false;
+    }
+    return false;
+}
+
+static void *hear_main(void *arg) {
+    (void)arg;
+    if (!network()) return NULL;
+    if (!transcribe()) { state = AI_FAILED; return NULL; }
+    if (!heard[0]) { heard_nothing = true; answer[0] = 0; state = AI_FAILED; return NULL; }
+    snprintf(question, sizeof(question), "%s", heard);
+    heard_ready = true;
+    run_question();
+    return NULL;
+}
+
+static bool start_with(void *(*fn)(void *)) {
     if (state == AI_BUSY) return false;
     if (state != AI_IDLE) thr_join(th);   /* the last question's thread has finished */
     state = AI_BUSY;
     answer[0] = 0;
-    if (!thr_create(&th, ask_main, NULL, 64 * 1024, 50)) {
+    heard_ready = heard_nothing = false;
+    if (!thr_create(&th, fn, NULL, 64 * 1024, 50)) {
         snprintf(answer, sizeof(answer), "Couldn't start asking.");
         state = AI_FAILED;
         return false;
     }
     return true;
 }
+static bool start(void) { return start_with(ask_main); }
 
 void ai_ask(const char *q) {
     if (state == AI_BUSY) return;
@@ -241,3 +357,17 @@ bool ai_test(void) {
 AiState ai_state(void) { return state; }
 const char *ai_answer(void) { return answer; }
 const char *ai_model(void) { return model; }
+
+void ai_hear(const short *pcm, int n, int rate, AiBrain e, const char *k, const char *m) {
+    if (state == AI_BUSY) return;
+    sound = pcm; nsound = n; sound_rate = rate;
+    ear = e < AI_COUNT ? e : AI_GEMINI;
+    snprintf(ear_key, sizeof(ear_key), "%s", k ? k : "");
+    snprintf(ear_model, sizeof(ear_model), "%s", m ? m : "");
+    heard[0] = 0;
+    testing = false;
+    start_with(hear_main);
+}
+const char *ai_heard(void) { return heard_ready ? heard : NULL; }
+bool ai_heard_nothing(void) { return heard_nothing; }
+bool ai_can_hear(AiBrain b) { return b == AI_GEMINI || b == AI_OPENAI; }

@@ -63,6 +63,7 @@ void ui_fog(float amount);
 /* the caption bar along the bottom of the stage */
 enum { UI_CAP_NONE, UI_CAP_INFO, UI_CAP_THINK, UI_CAP_TYPE, UI_CAP_LISTEN };
 void ui_caption(int kind, const char *text);
+void ui_listen_level(float level);   /* UI_CAP_LISTEN: how loud the microphone is, 0..1 */
 /* the line being typed (shown in the caption bar with UI_CAP_TYPE); masked: shown as dots after a few letters */
 void ui_typing(const char *text, bool masked);
 

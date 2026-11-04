@@ -242,11 +242,13 @@ int https_post(const char *url, const char *headers, const char *body, size_t bo
     int n = snprintf(head, sizeof(head),
                      "POST %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: ProfessorPixel/%s (Nintendo GameCube)\r\n"
                      "Accept: application/json\r\nAccept-Encoding: identity\r\nConnection: close\r\n"
-                     "Content-Type: application/json\r\nContent-Length: %u\r\n%s\r\n",
-                     path, host, APP_VERSION, (unsigned)body_len, headers ? headers : "");
+                     "%sContent-Length: %u\r\n%s\r\n",
+                     path, host, APP_VERSION,
+                     headers && !strncasecmp(headers, "Content-Type:", 13) ? "" : "Content-Type: application/json\r\n",
+                     (unsigned)body_len, headers ? headers : "");
     if (n <= 0 || n >= (int)sizeof(head) || !conn_write_all(&s.c, head, (size_t)n) ||
         (body_len && !conn_write_all(&s.c, body, body_len))) {
-        snprintf(err, errlen, "Couldn't send the question to %s.", host);
+        snprintf(err, errlen, "Couldn't send that to %s.", host);
         conn_close(&s.c);
         return -1;
     }

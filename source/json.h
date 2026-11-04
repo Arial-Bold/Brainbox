@@ -8,6 +8,8 @@ typedef struct { char *s; size_t len, cap; bool failed; } Buf;   /* a growing st
 void buf_add(Buf *b, const char *s);
 void buf_addf(Buf *b, const char *fmt, ...);
 void buf_add_json_string(Buf *b, const char *text);   /* "text", escaped (text is CP-1252, sent as UTF-8) */
+void buf_add_mem(Buf *b, const void *data, size_t n);      /* bytes as they are */
+void buf_add_base64(Buf *b, const void *data, size_t n);   /* bytes in base64 */
 void buf_free(Buf *b);
 
 /* The string at path in doc ("candidates.0.content.parts.0.text": object

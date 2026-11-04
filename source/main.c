@@ -18,6 +18,7 @@
 #include "sound.h"
 #include "gckbd.h"
 #include "keyweb.h"
+#include "listen.h"
 #include "dolload.h"
 #include "net/storage.h"
 #include "net/qrcodegen.h"
@@ -438,13 +439,38 @@ static void settings(void) {
 
 /* ------------------------------------------------------- the conversation */
 
+static bool has_mic;   /* a microphone in a memory card slot */
+
 static const char *idle_caption(void) {
-	return kb_connected() ? "Start typing your question\x85" : "Plug in the keyboard controller to ask a question";
+	if (has_mic) return kb_connected() ? "Hold A and talk to me, or start typing\x85" : "Hold A and talk to me\x85";
+	return kb_connected() ? "Start typing your question\x85" : "Plug in a microphone or the keyboard controller to ask a question";
 }
 
 static void idle_hints(void) {
-	if (ui_chat_more() > 0) hints(4, "A:Ask", "S:Scroll", "ST:Settings", "B:Exit to Launcher");
-	else hints(3, "A:Ask", "ST:Settings", "B:Exit to Launcher");
+	const char *ask_hint = has_mic ? "A:Hold to talk" : "A:Ask";
+	bool more = ui_chat_more() > 0;
+	if (has_mic && kb_connected()) {
+		if (more) hints(5, ask_hint, "Y:Type", "S:Scroll", "ST:Settings", "B:Exit");
+		else hints(4, ask_hint, "Y:Type", "ST:Settings", "B:Exit to Launcher");
+	} else if (more) hints(4, ask_hint, "S:Scroll", "ST:Settings", "B:Exit to Launcher");
+	else hints(3, ask_hint, "ST:Settings", "B:Exit to Launcher");
+}
+
+/* what he says once the AI has answered q */
+static void answered(const char *q) {
+	if (ai_state() == AI_DONE) {
+		int b = ui_set.brain;
+		if (strcmp(ui_set.model[b], ai_model())) {   /* the usual model had gone: keep the one that answered */
+			snprintf(ui_set.model[b], sizeof(ui_set.model[b]), "%s", ai_model());
+			save_settings();
+		}
+		say(q, ai_answer());
+		if (strstr(ai_answer(), "Ha") || strstr(ai_answer(), "ha!")) ui_chuckle();
+	} else {
+		char msg[400];
+		snprintf(msg, sizeof(msg), "Hmm, I couldn't reach my brain just now. %.300s", ai_answer());
+		say(q, msg);
+	}
 }
 
 /* asks the question and has him answer it */
@@ -469,19 +495,81 @@ static void ask(const char *q) {
 		say(q, "Oh, never mind then! Ask me anything else.");
 		return;
 	}
-	if (ai_state() == AI_DONE) {
-		int b = ui_set.brain;
-		if (strcmp(ui_set.model[b], ai_model())) {   /* the usual model had gone: keep the one that answered */
-			snprintf(ui_set.model[b], sizeof(ui_set.model[b]), "%s", ai_model());
-			save_settings();
-		}
-		say(q, ai_answer());
-		if (strstr(ai_answer(), "Ha") || strstr(ai_answer(), "ha!")) ui_chuckle();
-	} else {
-		char msg[400];
-		snprintf(msg, sizeof(msg), "Hmm, I couldn't reach my brain just now. %.300s", ai_answer());
-		say(q, msg);
+	answered(q);
+}
+
+/* the AI that writes down what's said (Claude can't hear: Gemini or ChatGPT does it, if signed in) */
+static bool pick_ear(AiBrain *e) {
+	int b = ui_set.brain;
+	if (ai_can_hear((AiBrain)b) && ui_set.key[b][0]) { *e = (AiBrain)b; return true; }
+	if (ui_set.key[AI_GEMINI][0]) { *e = AI_GEMINI; return true; }
+	if (ui_set.key[AI_OPENAI][0]) { *e = AI_OPENAI; return true; }
+	return false;
+}
+
+/* hold A and talk: records while A is held, then has him answer */
+static void listen_and_ask(void) {
+	AiBrain ear;
+	if (!pick_ear(&ear)) {
+		wait_release();
+		say("", "Oh dear, Claude can't hear through the microphone. But Google Gemini or ChatGPT can listen for me! "
+		        "Sign one of them in under Brain in Settings, then switch back to Claude. Or just type your question.");
+		return;
 	}
+	speech_stop();
+	while (ai_state() == AI_BUSY) read_input();   /* (a question he was told to never mind, still on its way) */
+	if (!listen_start()) { has_mic = false; ui_toast("The microphone isn't answering. Is it pushed all the way in?"); return; }
+	ui_layout(0);
+	ui_chat("", "");
+	ui_pose(0, 0.5f, true);
+	ui_caption(UI_CAP_LISTEN, "I'm listening\x85");
+	hints(1, "A:Let go when done");
+	int warned = 0;
+	for (;;) {
+		read_input();
+		listen_update();
+		ui_listen_level(listen_level());
+		if (!(held & PAD_BUTTON_A)) break;
+		if (listen_full()) break;
+		if (!warned && listen_seconds() > LISTEN_MAX_SECONDS - 3) { warned = 1; ui_caption(UI_CAP_LISTEN, "A few more seconds\x85"); }
+	}
+	const short *pcm;
+	int n;
+	bool got = listen_stop(&pcm, &n);
+	ui_listen_level(0);
+	if (!got) {
+		ui_pose(0, 0, true);
+		ui_caption(UI_CAP_NONE, "");
+		ui_toast(listen_seconds() < 0.3f ? "Hold A down while you talk." : "I didn't hear anything. Is the microphone plugged in?");
+		wait_release();
+		return;
+	}
+	ui_layout(1);
+	ui_chat("\x85", "");
+	ui_caption(UI_CAP_THINK, "Let me hear that again\x85");
+	ui_pose(0.5f, 0.3f, true);
+	hints(1, "B:Never mind");
+	use_brain();
+	ai_hear(pcm, n, LISTEN_RATE, ear, ui_set.key[ear], ui_set.model[ear]);
+	bool cancelled = false, shown = false;
+	while (ai_state() == AI_BUSY) {
+		read_input();
+		if (!shown && ai_heard()) {
+			shown = true;
+			ui_chat(ai_heard(), "");
+			ui_caption(UI_CAP_THINK, "Hmm, let me think about that\x85");
+			ui_pose(1, 0, true);
+		}
+		if (down & PAD_BUTTON_B) { cancelled = true; break; }
+	}
+	ui_pose(0, 0.6f, true);
+	ui_caption(UI_CAP_NONE, "");
+	const char *q = ai_heard() ? ai_heard() : "";
+	static char heard[1200];
+	snprintf(heard, sizeof(heard), "%s", q);
+	if (cancelled) { say(heard, "Oh, never mind then! Ask me anything else."); return; }
+	if (ai_heard_nothing()) { say("", "Hmm? I didn't quite catch that. Hold A, speak up a little, and let go when you're done!"); return; }
+	answered(heard);
 }
 
 static void conversation(void) {
@@ -494,7 +582,7 @@ static void conversation(void) {
 		read_input();
 		u64 now = ticks_to_millisecs(gettime());
 		if (exit_armed && now - exit_at > 3000) exit_armed = false;
-		if (kb_connected() != was_kb) { was_kb = kb_connected(); ui_caption(UI_CAP_INFO, idle_caption()); }
+		if (kb_connected() != was_kb) { was_kb = kb_connected(); ui_caption(UI_CAP_INFO, idle_caption()); idle_hints(); }
 		/* a key typed on the keyboard starts a question */
 		KbEvent e;
 		char q[400] = "";
@@ -503,8 +591,26 @@ static void conversation(void) {
 			if (e.key == KB_CHAR && (unsigned char)e.ch > 32) { size_t n = strlen(q); if (n < sizeof(q) - 1) { q[n] = e.ch; q[n + 1] = 0; } start = true; }
 			if (e.key == KB_ENTER) start = true;
 		}
+		/* the microphone can be plugged in or out at any time */
+		bool mic = listen_present();
+		if (mic != has_mic) {
+			has_mic = mic;
+			ui_caption(UI_CAP_INFO, idle_caption());
+			idle_hints();
+			if (mic) ui_toast("Microphone found: hold A and talk!");
+		}
 		if (down & PAD_BUTTON_A) {
-			if (!kb_connected()) { ui_toast("Plug in the keyboard controller to type a question."); continue; }
+			if (has_mic) {
+				listen_and_ask();
+				ui_caption(UI_CAP_INFO, idle_caption());
+				idle_hints();
+				continue;
+			}
+			if (!kb_connected()) { ui_toast("Plug in a microphone or the keyboard controller to ask a question."); continue; }
+			start = true;
+		}
+		if ((down & PAD_BUTTON_Y) && has_mic) {
+			if (!kb_connected()) { ui_toast("Plug in the keyboard controller to type."); continue; }
 			start = true;
 		}
 		if (start) {
@@ -530,6 +636,7 @@ static void conversation(void) {
 
 int main(int argc, char **argv) {
 	ui_init();
+	listen_init();
 	sound_init();
 	speech_init();
 	storage_set_program(argc > 0 && argv ? argv[0] : NULL);
@@ -574,6 +681,7 @@ int main(int argc, char **argv) {
 	} else {
 		say("", "Hello there! I'm Professor Pixel. What would you like to know today?");
 	}
+	has_mic = listen_present();
 	conversation();
 	return 0;
 }
