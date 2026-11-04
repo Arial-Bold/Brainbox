@@ -1,6 +1,6 @@
 # Professor Pixel
 
-Professor Pixel is a kindly old hologram professor who lives in your GameCube. Ask him anything by talking into the GameCube Microphone or typing on the keyboard controller, and he answers out loud, floating in a beam of light, using the AI of your choice: **Google Gemini**, **Claude** or **ChatGPT**.
+Professor Pixel is a kindly old hologram professor who lives in your GameCube. Ask him anything by talking into the GameCube Microphone or typing on the keyboard controller, and he answers out loud, floating in a beam of light, using the AI of your choice: open models on **Groq** (Llama and others), **Google Gemini**, **Claude** or **ChatGPT**.
 
 - He's drawn in 3D on the GameCube's own graphics chip, as one smoothly sculpted head: soft lighting, a hologram shimmer, a glow, sparkles and a reflection on the floor. He blinks, raises his eyebrows, puts his spectacles on to think, and his mouth moves with his voice.
 - His voice is made on the GameCube itself with [Flite](https://github.com/festvox/flite), the speech engine from Carnegie Mellon University: no account or internet needed for it. He starts speaking a sentence at a time, and the speech is kept in the GameCube's audio memory (ARAM).
@@ -15,7 +15,7 @@ It runs on the GameCube only.
 - To ask questions, either or both of:
   - The GameCube Microphone (the one that came with Mario Party 6 and 7), in memory card slot A or B. Hold its button and talk.
   - The ASCII keyboard controller made for Phantasy Star Online, in any controller port, to type.
-- An API key for one of the AI services (see below). Google Gemini has a free allowance; Claude and ChatGPT are pay as you go, and a short chat costs a fraction of a cent.
+- An API key for one of the AI services (see below). Groq and Google Gemini have free allowances; Claude and ChatGPT are pay as you go, and a short chat costs a fraction of a cent.
 
 ## Installing
 
@@ -23,7 +23,7 @@ Download `pixel.zip` from the Releases page and copy the `pixel` folder in it to
 
 ## Signing in
 
-The first time, the professor's head is a little foggy: he needs a brain. Choose Google Gemini, Claude or ChatGPT, and a sign-in page appears with a QR code. Scan it with your phone (or open the address on a computer on the same network). The page links to that company's own site, where you sign in with your account and make an API key; paste the key into the page and press Send. You can also type the key with the keyboard controller (Y).
+The first time, the professor's head is a little foggy: he needs a brain. Choose Groq, Google Gemini, Claude or ChatGPT, and a sign-in page appears with a QR code. Scan it with your phone (or open the address on a computer on the same network). The page links to that company's own site, where you sign in with your account and make an API key; paste the key into the page and press Send. You can also type the key with the keyboard controller (Y).
 
 The GameCube's clock is set from the internet first (secure connections need the right date). The key is saved in `pixel.ini` beside the app on the SD card and is only ever sent to the company it's for. You can switch to a different AI in Settings > Brain.
 
@@ -31,7 +31,7 @@ The GameCube's clock is set from the internet first (secure connections need the
 
 With the microphone in a memory card slot, hold the button on the microphone (or A on the controller), ask your question, and let go. What you said goes to the AI to be written down (it shows in the "You" bubble), then on to him as the question. Up to 15 seconds at a time. While the microphone is being tried out, the last recording is kept as `heard.wav` beside the app, with a few details about it in `mic.txt`.
 
-Google Gemini and ChatGPT can listen. Claude can't take sound, so if Claude is his brain, also sign in to Gemini or ChatGPT (Settings > Brain, then switch back to Claude): that one writes down what you say, and Claude answers.
+Groq, Google Gemini and ChatGPT can listen. When Groq is signed in, it always does the listening (with Whisper, which is quick and free), whichever AI answers. Claude can't take sound, so if Claude is his brain, also sign in to Groq (Settings > Brain, then switch back to Claude): Groq writes down what you say, and Claude answers.
 
 ## Controls
 
@@ -55,11 +55,11 @@ Google Gemini and ChatGPT can listen. Claude can't take sound, so if Claude is h
 - **Voice volume**: how loud he speaks, from Off to 10.
 - **Menu sounds**: how loud the sounds are when you move and choose, from Off to 10.
 - **Captions**: shows his answers in a bubble as he speaks.
-- **Brain**: which AI he uses, and signing in to it.
+- **Brain**: which AI he uses (Groq, Google Gemini, Claude or ChatGPT), and signing in to it.
 - **Launcher**: which .dol at the root of the SD card Exit to Launcher starts.
 - **Exit to Launcher**: leaves Professor Pixel.
 
-A few more can be set by hand in `pixel.ini`: `gemini.model`, `claude.model` and `openai.model` choose a different model for each service (empty for the usual one), and `display.glow=0` turns the glow off.
+A few more can be set by hand in `pixel.ini`: `groq.model`, `gemini.model`, `claude.model` and `openai.model` choose a different model for each service (empty for the usual one), and `display.glow=0` turns the glow off.
 
 ## Building
 
@@ -79,4 +79,4 @@ Every push to GitHub builds it too (see the Actions tab), and the result is a zi
 - libogc2 and libdvm: Extrems and the devkitPro team
 - Font: M PLUS Rounded 1c (SIL Open Font License, see `tools/fonts/OFL.txt`)
 
-Professor Pixel isn't affiliated with Google, Anthropic, OpenAI or Nintendo.
+Professor Pixel isn't affiliated with Groq, Meta, Google, Anthropic, OpenAI or Nintendo.
