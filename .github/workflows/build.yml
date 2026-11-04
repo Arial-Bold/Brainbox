@@ -1,0 +1,33 @@
+name: Build Professor Pixel
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get the source code
+        uses: actions/checkout@v5
+
+      - name: Download Flite and mbedTLS
+        run: sh get-deps.sh
+
+      - name: Build the .dol
+        run: docker run --rm -v "$PWD:/src" -w /src ghcr.io/extremscorner/libogc2:latest make
+
+      - name: Gather files for the SD card
+        run: |
+          mkdir -p package/pixel
+          cp pixel_GC.dol package/pixel/default.dol
+          cp dist/cacert.pem package/pixel/cacert.pem
+          if [ -f dist/opening.bnr ]; then cp dist/opening.bnr package/pixel/opening.bnr; fi
+
+      - name: Upload result
+        uses: actions/upload-artifact@v6
+        with:
+          name: pixel
+          path: package/
