@@ -16,6 +16,7 @@
 #include "ui.h"
 #include "net/thr.h"
 #include "flite.h"
+#include "saywords.h"
 #include <gccore.h>
 #include <aesndlib.h>
 #include <ogc/aram.h>
@@ -176,6 +177,7 @@ static void *talk_main(void *arg) {
         flite_add_lang("eng", usenglish_init, cmulex_init);
         flite_add_lang("usenglish", usenglish_init, cmulex_init);
         voice = register_cmu_us_rms(NULL);
+        saywords_teach(voice);   /* the words it would get wrong */
     }
     cst_errjmp = NULL;
     ready = voice != NULL;
@@ -186,7 +188,7 @@ static void *talk_main(void *arg) {
         thr_lock(&job_lock);
         u32 g = job_gen;
         static char text[4096];
-        snprintf(text, sizeof(text), "%s", job);
+        saywords_tidy(job, text, sizeof(text));   /* ("Hmm" said as a hum, not spelled out; "e.g." as "for example"...) */
         thr_unlock(&job_lock);
         done_gen = g;
         making = true;

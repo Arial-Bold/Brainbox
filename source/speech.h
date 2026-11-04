@@ -2,7 +2,8 @@
  * GameCube itself. A reply is spoken a sentence at a time: while the first
  * sentence plays, the next ones are made. The speech waits in ARAM (the
  * audio memory), so long replies take almost no main memory, and is streamed
- * to the sound chip from there. */
+ * to the sound chip from there. Sounds, slang and abbreviations it would
+ * get wrong are tidied first (saywords.c). */
 #pragma once
 #include <stdbool.h>
 
