@@ -167,7 +167,103 @@ static void tube_r(const V3 *path, int n, const float *rad, int seg) {
     }
 }
 
+/* A surface made from a formula f(u, v) (u along it, 0..1; v round it, 0..1,
+ * wrapping), its normals worked out from the formula; turned by rot and
+ * moved to at. The normals are made to point outwards (away from the middle). */
+typedef void (*SurfFn)(float u, float v, const void *ctx, V3 *out);
+static void param_surface(int nu, int nv, SurfFn f, const void *ctx, const M3 *rot, V3 at) {
+    if (nverts + (nu + 1) * nv > MAXV) return;
+    int base = nverts;
+    V3 mid = v3(0, 0, 0);
+    for (int j = 0; j <= nu; j++)
+        for (int i = 0; i < nv; i++) { V3 p; f((float)j / nu, (float)i / nv, ctx, &p); mid = add(mid, p); }
+    mid = mul(mid, 1.0f / ((nu + 1) * nv));
+    const float e = 0.002f;
+    for (int j = 0; j <= nu; j++) {
+        float u = (float)j / nu;
+        for (int i = 0; i < nv; i++) {
+            float v = (float)i / nv;
+            V3 p, pu0, pu1, pv0, pv1;
+            f(u, v, ctx, &p);
+            f(u > e ? u - e : u, v, ctx, &pu0); f(u < 1 - e ? u + e : u, v, ctx, &pu1);
+            f(u, v - e, ctx, &pv0); f(u, v + e, ctx, &pv1);
+            V3 n = norm(cross(sub(pu1, pu0), sub(pv1, pv0)));
+            if (dot(n, sub(p, mid)) < 0) n = mul(n, -1);
+            if (rot) { p = apply(rot, p); n = apply(rot, n); }
+            vert(add(p, at), n);
+        }
+    }
+    grid(base, nv, nu + 1);
+}
+
+/* a bow tie wing: from the knot (u 0) out to its end (u 1) */
+typedef struct { int sx; const M3 *tilt; } BowWing;
+static void bow_wing(float u, float v, const void *ctx, V3 *out) {
+    const BowWing *w = ctx;
+    float a = 6.2831853f * v, s = sinf(a), c = cosf(a);
+    float flare = 1 - (1 - u) * (1 - u) * (1 - 0.4f * u);
+    float h = 0.036f + 0.084f * flare;              /* half height: pinched at the knot, wide at the end */
+    float d = 0.026f + 0.032f * sinf(3.1415927f * fminf(u * 1.1f, 1));   /* puffy in the middle */
+    /* the folds gathered into the knot, fading out along the wing */
+    float fold = 0.010f * sinf(a * 5) * (1 - u) * (1 - u);
+    /* the end: the top and bottom corners reach further out than the middle (a notch) */
+    float len = 0.225f - 0.038f * powf(1 - s * s, 1.5f);
+    /* the end thins to an edge (front to back), so its outline keeps the notch */
+    float thin = u > 0.80f ? sqrtf(fmaxf(0, 1 - ((u - 0.80f) / 0.20f) * ((u - 0.80f) / 0.20f))) : 1;
+    float round_ = u > 0.80f ? 0.92f + 0.08f * thin : 1;   /* (corners just softened) */
+    float x = 0.035f + len * u;
+    V3 p = v3(x, (h + fold) * s * round_, (d + fold * 0.6f) * c * thin);
+    p = apply(w->tilt, v3(p.x * w->sx, p.y, p.z));
+    *out = p;
+}
+
+/* the knot: a short wrapped band, a little squarish, with creases running round it */
+static void bow_knot(float u, float v, const void *ctx, V3 *out) {
+    (void)ctx;
+    float a = 6.2831853f * v, c = cosf(a), s = sinf(a);
+    float y = (u - 0.5f) * 0.11f;
+    float end = sqrtf(fmaxf(0, 1 - (2 * u - 1) * (2 * u - 1)));   /* rounded top and bottom */
+    float sq = powf(fabsf(c), 0.7f) * (c < 0 ? -1 : 1), sz = powf(fabsf(s), 0.7f) * (s < 0 ? -1 : 1);   /* squarish */
+    float crease = 1 + 0.06f * sinf(a * 8) * (s < 0 ? 1 : 0.3f);
+    float rx = 0.048f * crease * (0.55f + 0.45f * end), rz = 0.040f * crease * (0.55f + 0.45f * end);
+    *out = v3(sq * rx, y * (0.6f + 0.4f * end), sz * rz - 0.012f);
+}
+
 static V3 brow_surf[16];
+
+/* an eyelid over an eye (centre c, radii r): the eye's shape a little larger,
+ * from the top down to the angle edge (from straight up), with a rounded rim */
+static void eyelid(V3 c, V3 r, float edge, float tilt) {
+    const int nu = 28, rows = 10;
+    const float grow = 1.09f;
+    r = v3(r.x * grow, r.y * grow, r.z + 0.03f);   /* (deep enough to clear the iris and pupil) */
+    if (nverts + nu * (rows + 1) > MAXV) return;
+    int base = nverts;
+    const float *cs = circle(nu, false), *sn = circle(nu, true);
+    for (int j = 0; j <= rows; j++) {
+        for (int i = 0; i < nu; i++) {
+            /* the edge slopes (lower at the outer corner), the shell itself stays on the eye's shape */
+            float e = edge + tilt * cs[i];
+            if (e > 3.05f) e = 3.05f;
+            float th = e * j / rows, st = sinf(th), ct = cosf(th);
+            V3 u = v3(st * cs[i], ct, st * sn[i]);
+            V3 p = v3(u.x * r.x, u.y * r.y, u.z * r.z);
+            V3 n = norm(v3(u.x / r.x, u.y / r.y, u.z / r.z));
+            vert(add(p, c), n);
+        }
+    }
+    grid(base, nu, rows + 1);
+    /* the rim: a soft roll along the front of the edge */
+    V3 rim[17];
+    for (int i = 0; i < 17; i++) {
+        float a = 3.1415927f + 3.1415927f * i / 16;   /* the front half */
+        float e = edge + tilt * cosf(a);
+        if (e > 3.05f) e = 3.05f;
+        float st = sinf(e), ct = cosf(e);
+        rim[i] = add(v3(st * cosf(a) * r.x * 1.02f, ct * r.y * 1.02f, st * sinf(a) * r.z * 1.02f), c);
+    }
+    tube(rim, 17, 0.013f, 8);
+}
 
 typedef struct { V3 c, r; M3 inv; bool rot; float col[3]; float shine; bool hair; } Blob;
 #define MAXB 40
@@ -230,7 +326,6 @@ static void make_blobs(void) {
         blob(0.29f * sx, 0.23f, -0.41f, 0.13f, 0.10f, 0.09f, NULL, CHEEK, 0.1f, false);     /* cheeks */
         r = rotz(-0.12f * sx); blob(0.57f * sx, 0.40f, 0.03f, 0.075f, 0.16f, 0.07f, &r, EAR, 0.08f, false);   /* ears */
         blob(0.20f * sx, 0.45f, -0.50f, 0.12f, 0.035f, 0.08f, NULL, LID, 0.08f, false);    /* under the eyes */
-        r = rotz(0.18f * sx); blob(0.21f * sx, 0.66f, -0.44f, 0.17f, 0.06f, 0.10f, &r, SK, 0.08f, false);   /* brow ridge */
         /* tufts of grey hair round the sides and back, swept back */
         static const float tufts[7][7] = {
             { 0.58f, 0.68f, 0.10f, 0.17f, 0.22f, 0.30f, 0.45f }, { 0.62f, 0.46f, 0.16f, 0.14f, 0.22f, 0.28f, 0.10f },
@@ -244,8 +339,6 @@ static void make_blobs(void) {
     }
     blob(0, 0.62f, 0.47f, 0.30f, 0.25f, 0.13f, NULL, HAIR, 0.04f, true);     /* the back of the head */
     blob(0, 0.40f, 0.50f, 0.26f, 0.20f, 0.11f, NULL, HAIR, 0.04f, true);
-    blob(0, -0.14f, -0.41f, 0.13f, 0.16f, 0.10f, NULL, HAIR, 0.04f, true);   /* a neat grey goatee */
-    blob(0, -0.03f, -0.46f, 0.08f, 0.035f, 0.04f, NULL, HAIR, 0.04f, true);
 }
 
 /* a point on the front of his face (for the lines and the mouth drawn on it) */
@@ -384,7 +477,6 @@ static void build(const PixelPose *ps, bool S) {
     cur_grp = G_HEAD;
     float t = ps->t, talk = ps->talk, blink = ps->blink, th = ps->think;
     const float SK[3] = { 0.90f, 0.73f, 0.64f }, BROW[3] = { 0.86f, 0.86f, 0.90f };
-    M3 r;
     if (S) {
     make_blobs();
     make_zmap();
@@ -400,9 +492,10 @@ static void build(const PixelPose *ps, bool S) {
         ell(0.19f * sx + 0.01f + 0.025f * th + ps->look_x * 0.03f, 0.51f + 0.03f * th, -0.58f, 0.058f, 0.064f, 0.02f, 16, 10, NULL);
         colour(0.03f, 0.04f, 0.08f, GLOSS);
         ell(0.19f * sx + 0.01f + 0.025f * th + ps->look_x * 0.03f, 0.51f + 0.03f * th, -0.596f, 0.026f, 0.029f, 0.008f, 12, 6, NULL);   /* the pupil */
-        float lid = 0.06f + 0.06f * blink;
-        r = rotz(-0.18f * sx);
-        colour(SK[0], SK[1], SK[2], SKIN); ell(0.20f * sx, 0.57f - 0.04f * blink, -0.515f, 0.13f, lid, 0.092f, 22, 12, &r);
+        /* the upper lid: a smooth shell over the top of the eye, down to a soft
+         * rounded edge (heavy-lidded; all the way down for a blink) */
+        colour(SK[0], SK[1], SK[2], SKIN);
+        eyelid(v3(0.20f * sx, 0.52f, -0.50f), v3(0.125f, 0.11f, 0.085f), 1.28f + (2.95f - 1.28f) * blink, 0.16f * sx * (1 - blink));
         /* big expressive eyebrows */
         float lift = 0.03f * talk + (sx > 0 ? 0.07f : -0.015f) * th + ps->brows * 0.04f;
         colour(BROW[0], BROW[1], BROW[2], MATTE);
@@ -426,7 +519,7 @@ static void build(const PixelPose *ps, bool S) {
         V3 p[9];
         for (int i = 0; i < 9; i++) {
             float x = -0.2f + k * 0.03f + (0.4f - k * 0.06f) * i / 8;
-            p[i] = surf(x, (k ? 0.95f : 0.88f) + 0.02f * cosf(x * 6), 0.01f);
+            p[i] = surf(x, (k ? 0.87f : 0.815f) + 0.015f * cosf(x * 6), 0.008f);
         }
         tube(p, 9, 0.009f, 4);
     }
@@ -436,25 +529,48 @@ static void build(const PixelPose *ps, bool S) {
             float u = i / 7.0f;
             brow_surf[k] = surf((0.07f + 0.36f * u) * sx, 0.665f + 0.07f * sinf(u * 2.6f), 0.012f);
         }
-    /* a white collar and the bow tie's knot: where he ends */
-    colour(0.94f, 0.95f, 1.0f, MATTE);
-    for (int sx = -1; sx <= 1; sx += 2) { r = rotz(-0.5f * sx); ell(0.10f * sx, -0.36f, -0.22f, 0.10f, 0.05f, 0.08f, 10, 6, &r); }
-    colour(0.72f, 0.06f, 0.10f, GLOSS); ell(0, -0.42f, -0.35f, 0.055f, 0.055f, 0.045f, 10, 8, NULL);
+    /* a big, full grey moustache: a rounded lobe each side, meeting under his
+     * nose and sweeping up at the ends into little curls */
+    colour(0.84f, 0.84f, 0.88f, MATTE);
+    {
+        static const float key[10][3] = {   /* x, y, thickness, from the middle out to the curl */
+            { -0.020f, 0.150f, 0.048f }, { 0.040f, 0.140f, 0.066f }, { 0.100f, 0.118f, 0.086f }, { 0.155f, 0.104f, 0.092f },
+            { 0.208f, 0.110f, 0.080f }, { 0.246f, 0.134f, 0.058f }, { 0.264f, 0.168f, 0.038f }, { 0.258f, 0.198f, 0.023f },
+            { 0.238f, 0.214f, 0.013f }, { 0.218f, 0.212f, 0.006f } };
+        enum { N = 28 };
+        for (int sx = -1; sx <= 1; sx += 2) {
+            V3 p[N]; float rad[N];
+            for (int i = 0; i < N; i++) {
+                /* a smooth curve through the key points (Catmull-Rom) */
+                float f = (float)i / (N - 1) * 9;
+                int k = (int)f; if (k > 8) k = 8;
+                float t = f - k;
+                float v[3];
+                for (int c = 0; c < 3; c++) {
+                    float p0 = key[k > 0 ? k - 1 : 0][c], p1 = key[k][c], p2 = key[k + 1][c], p3 = key[k + 2 < 10 ? k + 2 : 9][c];
+                    v[c] = 0.5f * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (-p0 + 3 * p1 - 3 * p2 + p3) * t * t * t);
+                }
+                rad[i] = v[2];
+                p[i] = surf(v[0] * sx, v[1], v[2] * 0.45f);
+            }
+            tube_r(p, N, rad, 16);
+        }
+    }
     }
     if (D) {
     /* the mouth: a lopsided, knowing smile, or open as he talks */
     if (talk > 0.05f) {
         float mh = 0.022f + 0.05f * talk, mw = 0.115f - 0.015f * talk;
-        V3 m = surf(0, 0.07f, -0.016f);
-        colour(0.30f, 0.07f, 0.11f, DARK); ell(0, 0.07f, m.z, mw, mh, 0.03f, 20, 10, NULL);
+        V3 m = surf(0, 0.012f, -0.016f);   /* (just under the moustache) */
+        colour(0.30f, 0.07f, 0.11f, DARK); ell(0, 0.012f, m.z, mw, mh, 0.03f, 20, 10, NULL);
         if (talk > 0.25f) {   /* a glimpse of his top teeth */
-            colour(0.96f, 0.94f, 0.90f, SKIN); ell(0, 0.07f + mh * 0.62f, m.z - 0.012f, mw * 0.62f, 0.016f, 0.02f, 14, 6, NULL);
+            colour(0.96f, 0.94f, 0.90f, SKIN); ell(0, 0.012f + mh * 0.62f, m.z - 0.012f, mw * 0.62f, 0.016f, 0.02f, 14, 6, NULL);
         }
         /* his lips, round the edge */
         V3 lp[25];
         for (int i = 0; i < 25; i++) {
             float a = 6.2831853f * i / 24;
-            lp[i] = surf(cosf(a) * (mw + 0.008f), 0.07f + sinf(a) * (mh + 0.008f), 0.002f);
+            lp[i] = surf(cosf(a) * (mw + 0.008f), 0.012f + sinf(a) * (mh + 0.008f), 0.002f);
         }
         colour(0.78f, 0.44f, 0.42f, SKIN); tube(lp, 25, 0.015f, 6);
     } else {
@@ -462,7 +578,7 @@ static void build(const PixelPose *ps, bool S) {
         int n = th < 0.5f ? 11 : 7;
         for (int i = 0; i < n; i++) {
             float x = th < 0.5f ? -0.15f + 0.32f * i / 10 : 0.14f * i / 6;
-            float y = 0.08f + 0.9f * (x - 0.01f) * (x - 0.01f) + 0.12f * x;
+            float y = 0.0f + 0.9f * (x - 0.01f) * (x - 0.01f) + 0.12f * x;
             p[i] = surf(x, y, 0.004f);
         }
         colour(0.55f, 0.22f, 0.24f, MATTE); tube(p, n, 0.016f, 6);
@@ -471,7 +587,7 @@ static void build(const PixelPose *ps, bool S) {
     {
         bool down = th >= 0.5f;
         M3 R = rotx(down ? 0.08f : 0.95f);
-        V3 at = down ? v3(0, 0.50f, -0.66f) : v3(0, 0.92f, -0.42f);
+        V3 at = down ? v3(0, 0.50f, -0.66f) : v3(0, 0.975f, surf(0, 0.975f, 0).z - 0.035f);   /* (up: resting on his forehead, above the lines) */
         float gw = down ? 0.13f : 0.12f, gh = down ? 0.09f : 0.07f, gx = down ? 0.20f : 0.19f;
         colour(0.95f, 0.78f, 0.30f, GLOSS);
         for (int sx = -1; sx <= 1; sx += 2) {
@@ -487,25 +603,19 @@ static void build(const PixelPose *ps, bool S) {
         V3 b[3] = { add(apply(&R, v3(-0.07f, 0.02f, 0)), at), add(apply(&R, v3(0, 0.035f, 0)), at), add(apply(&R, v3(0.07f, 0.02f, 0)), at) };
         tube(b, 3, 0.015f, 6);
     }
-    /* the red bow tie (it bounces) */
+    /* the red bow tie (it bounces): two puffy wings, pinched into folds at
+     * the knot and flaring out to notched ends, and a wrapped knot */
     {
         M3 T = rotz(0.15f * sinf(t * 2) + 0.25f * ps->chuckle);
+        const V3 at = v3(0, -0.42f, -0.31f);
         colour(0.86f, 0.10f, 0.14f, GLOSS);
         for (int sx = -1; sx <= 1; sx += 2) {
-            int base = nverts;
-            M3 r2 = rotz(0.25f * sx);
-            ellipsoid(v3(0, 0, 0), v3(0.14f, 0.09f, 0.06f), 20, 12, &r2);
-            for (int i = base; i < nverts; i++) {
-                /* a proper bow: pinched at the knot, flaring out to the ends */
-                float u = (vp[i].x * sx + 0.14f) / 0.28f;
-                u = u < 0 ? 0 : u > 1 ? 1 : u;
-                float f = 0.38f + 0.80f * u * u * (3 - 2 * u);
-                vp[i].y *= f;
-                vn[i] = norm(v3(vn[i].x, vn[i].y / f, vn[i].z));
-                vp[i] = add(apply(&T, add(vp[i], v3(0.14f * sx, 0, 0))), v3(0, -0.42f, -0.30f));
-                vn[i] = apply(&T, vn[i]);
-            }
+            M3 tilt = rotz(0.16f * sx);
+            BowWing w = { sx, &tilt };
+            param_surface(18, 24, bow_wing, &w, &T, at);
         }
+        colour(0.80f, 0.08f, 0.12f, GLOSS);
+        param_surface(10, 24, bow_knot, NULL, &T, at);
     }
     }
     /* floating props: a little glowing globe, and a pencil that scribbles
