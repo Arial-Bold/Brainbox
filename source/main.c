@@ -442,12 +442,12 @@ static void settings(void) {
 static bool has_mic;   /* a microphone in a memory card slot */
 
 static const char *idle_caption(void) {
-	if (has_mic) return kb_connected() ? "Hold A and talk to me, or start typing\x85" : "Hold A and talk to me\x85";
+	if (has_mic) return kb_connected() ? "Hold the mic button and talk, or start typing\x85" : "Hold the mic button and talk to me\x85";
 	return kb_connected() ? "Start typing your question\x85" : "Plug in a microphone or the keyboard controller to ask a question";
 }
 
 static void idle_hints(void) {
-	const char *ask_hint = has_mic ? "A:Hold to talk" : "A:Ask";
+	const char *ask_hint = has_mic ? "MIC:Hold to talk" : "A:Ask";
 	bool more = ui_chat_more() > 0;
 	if (has_mic && kb_connected()) {
 		if (more) hints(5, ask_hint, "Y:Type", "S:Scroll", "ST:Settings", "B:Exit");
@@ -507,7 +507,25 @@ static bool pick_ear(AiBrain *e) {
 	return false;
 }
 
-/* hold A and talk: records while A is held, then has him answer */
+/* keeps the last recording on the SD card while the microphone is being
+ * tried out: heard.wav (what's sent to be written down) and mic.txt */
+static void save_recording(const short *pcm, int n) {
+	if (!storage_ok()) return;
+	char path[300];
+	storage_path(path, sizeof(path), "mic.txt");
+	char line[260];
+	snprintf(line, sizeof(line), "%s\n", listen_info());
+	storage_write_atomic(path, line, strlen(line));
+	unsigned char *w;
+	int len;
+	if (n > 0 && listen_wav(pcm, n, &w, &len)) {
+		storage_path(path, sizeof(path), "heard.wav");
+		storage_write_atomic(path, w, (size_t)len);
+		free(w);
+	}
+}
+
+/* hold the microphone's button (or A) and talk: records while it's held, then has him answer */
 static void listen_and_ask(void) {
 	AiBrain ear;
 	if (!pick_ear(&ear)) {
@@ -523,13 +541,13 @@ static void listen_and_ask(void) {
 	ui_chat("", "");
 	ui_pose(0, 0.5f, true);
 	ui_caption(UI_CAP_LISTEN, "I'm listening\x85");
-	hints(1, "A:Let go when done");
+	hints(1, "MIC:Let go when you're done");
 	int warned = 0;
 	for (;;) {
 		read_input();
 		listen_update();
 		ui_listen_level(listen_level());
-		if (!(held & PAD_BUTTON_A)) break;
+		if (!(held & PAD_BUTTON_A) && !listen_button()) break;
 		if (listen_full()) break;
 		if (!warned && listen_seconds() > LISTEN_MAX_SECONDS - 3) { warned = 1; ui_caption(UI_CAP_LISTEN, "A few more seconds\x85"); }
 	}
@@ -540,7 +558,8 @@ static void listen_and_ask(void) {
 	if (!got) {
 		ui_pose(0, 0, true);
 		ui_caption(UI_CAP_NONE, "");
-		ui_toast(listen_seconds() < 0.3f ? "Hold A down while you talk." : "I didn't hear anything. Is the microphone plugged in?");
+		save_recording(pcm, n);
+		ui_toast(listen_seconds() < 0.3f ? "Hold the button down while you talk." : "I didn't hear anything. Try talking a little closer to the microphone.");
 		wait_release();
 		return;
 	}
@@ -551,6 +570,7 @@ static void listen_and_ask(void) {
 	hints(1, "B:Never mind");
 	use_brain();
 	ai_hear(pcm, n, LISTEN_RATE, ear, ui_set.key[ear], ui_set.model[ear]);
+	save_recording(pcm, n);   /* (while it's on its way) */
 	bool cancelled = false, shown = false;
 	while (ai_state() == AI_BUSY) {
 		read_input();
@@ -597,7 +617,19 @@ static void conversation(void) {
 			has_mic = mic;
 			ui_caption(UI_CAP_INFO, idle_caption());
 			idle_hints();
-			if (mic) ui_toast("Microphone found: hold A and talk!");
+			if (mic) ui_toast("Microphone found: hold its button and talk!");
+		}
+		/* the button on the microphone */
+		static bool mic_was;
+		bool mic_btn = has_mic && listen_button();
+		bool mic_pressed = mic_btn && !mic_was;
+		mic_was = mic_btn;
+		if (mic_pressed) {
+			listen_and_ask();
+			mic_was = listen_button();
+			ui_caption(UI_CAP_INFO, idle_caption());
+			idle_hints();
+			continue;
 		}
 		if (down & PAD_BUTTON_A) {
 			if (has_mic) {

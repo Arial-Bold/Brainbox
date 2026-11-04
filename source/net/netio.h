@@ -12,5 +12,6 @@ int  netio_wait(int fd, bool for_write, int timeout_ms);  /* 1 ready, 0 timeout,
 void netio_close(int fd);
 
 bool   netio_sync_time(void);           /* SNTP */
+bool   netio_sync_clock(void);          /* SNTP, or a web server's Date if that's blocked (once it works, it stays set) */
 bool   netio_time_synced(void);
 time_t netio_now(void);                 /* UTC unix time */

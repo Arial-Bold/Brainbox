@@ -573,6 +573,7 @@ static float hint_one(const char *h, float x, float cy, bool draw) {
 		if (!strcmp(key, "B")) { tc = rgba(0xff, 0x5c, 0x7c, 255); ring = rgba(255, 92, 124, 97); glow = true; }
 		if (!strcmp(key, "Z")) { tc = rgba(0xb9, 0xa2, 0xff, 255); ring = rgba(185, 162, 255, 97); glow = true; }
 		if (!strcmp(key, "KB")) t = "Keyboard";
+		if (!strcmp(key, "MIC")) { t = "Mic button"; tc = rgba(0x7c, 0xd8, 0xff, 255); ring = rgba(124, 216, 255, 97); glow = true; }
 		float pw = text_width(t, 11) + 12;
 		if (pw < 20) pw = 20;
 		if (draw) {

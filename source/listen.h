@@ -14,6 +14,10 @@ void listen_update(void);          /* once a frame while recording: collects wha
 float listen_level(void);          /* how loud it is just now, 0..1 */
 float listen_seconds(void);        /* how long so far */
 bool listen_full(void);            /* LISTEN_MAX_SECONDS reached */
+bool listen_button(void);          /* the button on the microphone is held */
 /* stops; the recording (16-bit, LISTEN_RATE, cleaned up and evened out) and
- * its length in samples. false: nothing was said (too short or too quiet). */
+ * its length in samples (0: too short). false: nothing was said (too short
+ * or too quiet). */
 bool listen_stop(const short **pcm, int *n);
+const char *listen_info(void);     /* about the last recording (for mic.txt) */
+bool listen_wav(const short *pcm, int n, unsigned char **data, int *len);   /* as a .wav file (free *data) */

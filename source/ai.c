@@ -3,6 +3,7 @@
 #include "json.h"
 #include "net/https.h"
 #include "net/net.h"
+#include "net/netio.h"
 #include "net/thr.h"
 #include "net/storage.h"
 #include <stdio.h>
@@ -159,7 +160,12 @@ static void note_problem(const char *use_model, int status, const char *resp) {
 static bool network(void) {
     net_start();
     while (net_state() == NET_STARTING) thr_sleep_ms(50);
-    if (net_state() == NET_UP) return true;
+    if (net_state() == NET_UP) {
+        /* the date, from the network: certificates can't be checked without it
+         * (the console's own clock is often years out) */
+        netio_sync_clock();
+        return true;
+    }
     snprintf(answer, sizeof(answer), "%s", net_message()[0] ? net_message() : "There's no network. Is the network adapter connected?");
     state = AI_FAILED;
     return false;

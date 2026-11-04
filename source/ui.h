@@ -75,7 +75,7 @@ int  ui_chat_more(void);   /* lines of his answer below the bubble (0: all showi
 
 /* the description bar (Settings, the panels) and the controls along the bottom */
 void ui_status(const char *line1, const char *line2);
-/* "key:label", where the key is S (the Control Stick), A, B, X, Y, Z, ST (START) or none ("label") */
+/* "key:label", where the key is S (the Control Stick), A, B, X, Y, Z, ST (START), KB (the keyboard), MIC (the microphone's button) or none ("label") */
 #define UI_HINTS_MAX 5
 void ui_hints(const char *const *hints, int n);
 void ui_toast(const char *msg);   /* a message across the top that fades after a few seconds */

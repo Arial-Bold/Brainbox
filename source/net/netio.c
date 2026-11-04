@@ -226,6 +226,67 @@ bool netio_sync_time(void) {
     return true;
 }
 
+/* If the time servers can't be reached (some networks block them), the
+ * "Date:" line a web server sends with every answer will do: to the second
+ * is plenty for checking certificates. */
+static int month_of(const char *m) {
+    static const char *names = "JanFebMarAprMayJunJulAugSepOctNovDec";
+    for (int i = 0; i < 12; i++) if (!strncasecmp(m, names + i * 3, 3)) return i + 1;
+    return 0;
+}
+static s64 days_from_civil(int y, int m, int d) {   /* days since 1970-01-01 */
+    y -= m <= 2;
+    int era = (y >= 0 ? y : y - 399) / 400;
+    int yoe = y - era * 400;
+    int doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+    int doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    return (s64)era * 146097 + doe - 719468;
+}
+static bool time_from_web(const char *host) {
+    u32 ip;
+    if (netio_resolve(host, &ip) != 0) return false;
+    int fd = netio_connect(ip, 80);
+    if (fd < 0) return false;
+    char req[160];
+    int n = snprintf(req, sizeof(req), "HEAD / HTTP/1.0\r\nHost: %s\r\nUser-Agent: ProfessorPixel\r\n\r\n", host);
+    bool ok = false;
+    if (netio_wait(fd, true, 4000) == 1 && net_send(fd, req, n, 0) == n) {
+        char buf[2048];
+        int got = 0;
+        while (got < (int)sizeof(buf) - 1 && netio_wait(fd, false, 4000) == 1) {
+            int r = net_recv(fd, buf + got, sizeof(buf) - 1 - got, 0);
+            if (r <= 0) break;
+            got += r;
+            buf[got] = 0;
+            if (strstr(buf, "\r\n\r\n")) break;
+        }
+        buf[got] = 0;
+        /* Date: Tue, 03 Nov 2026 22:18:00 GMT */
+        for (char *p = buf; (p = strchr(p, '\n')) != NULL; ) {
+            p++;
+            if (strncasecmp(p, "Date:", 5)) continue;
+            int d, y, hh, mm, ss;
+            char mon[4];
+            const char *c = strchr(p, ',');
+            if (c && sscanf(c + 1, " %d %3s %d %d:%d:%d", &d, mon, &y, &hh, &mm, &ss) == 6 && month_of(mon) && y >= 2024) {
+                s64 unix_now = days_from_civil(y, month_of(mon), d) * 86400 + hh * 3600 + mm * 60 + ss;
+                time_base = unix_now - (s64)ticks_to_secs(gettime());
+                time_synced = true;
+                ok = true;
+            }
+            break;
+        }
+    }
+    net_close(fd);
+    return ok;
+}
+
+bool netio_sync_clock(void) {
+    if (time_synced) return true;
+    if (netio_sync_time()) return true;
+    return time_from_web("www.google.com") || time_from_web("www.cloudflare.com");
+}
+
 bool netio_time_synced(void) { return time_synced; }
 
 time_t netio_now(void) {
