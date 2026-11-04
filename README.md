@@ -1,8 +1,8 @@
 # Professor Pixel
 
-Professor Pixel is a kindly old hologram professor who lives in your GameCube. Ask him anything with the keyboard controller, and he answers out loud, floating in a beam of light, using the AI of your choice: **Google Gemini**, **Claude** or **ChatGPT**.
+Professor Pixel is a kindly old hologram professor who lives in your GameCube. Ask him anything by talking into the GameCube Microphone or typing on the keyboard controller, and he answers out loud, floating in a beam of light, using the AI of your choice: **Google Gemini**, **Claude** or **ChatGPT**.
 
-- He's drawn in 3D on the GameCube's own graphics chip: soft lighting, a hologram shimmer, a glow, sparkles and a reflection on the floor. He blinks, raises his eyebrows, puts his spectacles on to think, and his mouth moves with his voice.
+- He's drawn in 3D on the GameCube's own graphics chip, as one smoothly sculpted head: soft lighting, a hologram shimmer, a glow, sparkles and a reflection on the floor. He blinks, raises his eyebrows, puts his spectacles on to think, and his mouth moves with his voice.
 - His voice is made on the GameCube itself with [Flite](https://github.com/festvox/flite), the speech engine from Carnegie Mellon University: no account or internet needed for it. He starts speaking a sentence at a time, and the speech is kept in the GameCube's audio memory (ARAM).
 - The AI is reached directly over HTTPS through the network adapter, with your own API key.
 
@@ -12,7 +12,9 @@ It runs on the GameCube only.
 
 - A network adapter (the Broadband Adapter, or a WIZnet-based one such as the ETH2GC) connected to your router.
 - An SD card adapter (SD2SP2, SD Gecko or GC Loader).
-- The ASCII keyboard controller made for Phantasy Star Online, in any controller port, to type your questions. (The GameCube Microphone is coming in a later version.)
+- To ask questions, either or both of:
+  - The GameCube Microphone (the one that came with Mario Party 6 and 7), in memory card slot A or B. Hold A and talk.
+  - The ASCII keyboard controller made for Phantasy Star Online, in any controller port, to type.
 - An API key for one of the AI services (see below). Google Gemini has a free allowance; Claude and ChatGPT are pay as you go, and a short chat costs a fraction of a cent.
 
 ## Installing
@@ -25,12 +27,20 @@ The first time, the professor's head is a little foggy: he needs a brain. Choose
 
 The key is saved in `pixel.ini` beside the app on the SD card and is only ever sent to the company it's for. You can switch to a different AI in Settings > Brain.
 
+## Talking to him
+
+With the microphone in a memory card slot, hold A, ask your question, and let go. What you said goes to the AI to be written down (it shows in the "You" bubble), then on to him as the question. Up to 15 seconds at a time.
+
+Google Gemini and ChatGPT can listen. Claude can't take sound, so if Claude is his brain, also sign in to Gemini or ChatGPT (Settings > Brain, then switch back to Claude): that one writes down what you say, and Claude answers.
+
 ## Controls
 
 | Button | |
 | --- | --- |
+| A (hold) | With the microphone: talk while you hold it; let go to ask |
+| A | Without the microphone: type a question |
+| Y | With the microphone and the keyboard: type a question |
 | Keyboard | Start typing to ask a question; Enter asks it |
-| A | Ask a question |
 | Control Stick, + Control Pad, C-Stick | Move; scroll his answer |
 | X | Stop him talking |
 | B | Back, or stop him talking; on the main screen, twice to exit to the Launcher |
