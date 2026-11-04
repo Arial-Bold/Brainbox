@@ -267,7 +267,7 @@ def main():
         c.append('};')
         c.append(f'const UiFont font_{name} = {{ font_{name}_tex, {atlas.width}, {atlas.height}, {px}, {asc}, {desc}, font_{name}_glyphs }};\n')
         h.append(f'extern const UiFont font_{name};   /* {px} px */')
-    pics = []   # (Professor Pixel draws everything else himself)
+    pics = []   # (Professor Scotty draws everything else himself)
     h.append('')
     for name, img in pics:
         c.append(c_array(f'{name}_tex', tile_rgba8(img)))
