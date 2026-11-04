@@ -1,4 +1,4 @@
-# Professor Scotty
+# BrainBox
 
 <img width="1280" height="960" alt="01-ready" src="https://github.com/user-attachments/assets/726ffb06-26e5-4622-94ce-d166ea3854a0" />
 
