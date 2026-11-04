@@ -13,7 +13,7 @@ It runs on the GameCube only.
 - A network adapter (the Broadband Adapter, or a WIZnet-based one such as the ETH2GC) connected to your router.
 - An SD card adapter (SD2SP2, SD Gecko or GC Loader).
 - To ask questions, either or both of:
-  - The GameCube Microphone (the one that came with Mario Party 6 and 7), in memory card slot A or B. Hold A and talk.
+  - The GameCube Microphone (the one that came with Mario Party 6 and 7), in memory card slot A or B. Hold its button and talk.
   - The ASCII keyboard controller made for Phantasy Star Online, in any controller port, to type.
 - An API key for one of the AI services (see below). Google Gemini has a free allowance; Claude and ChatGPT are pay as you go, and a short chat costs a fraction of a cent.
 
@@ -25,11 +25,11 @@ Download `pixel.zip` from the Releases page and copy the `pixel` folder in it to
 
 The first time, the professor's head is a little foggy: he needs a brain. Choose Google Gemini, Claude or ChatGPT, and a sign-in page appears with a QR code. Scan it with your phone (or open the address on a computer on the same network). The page links to that company's own site, where you sign in with your account and make an API key; paste the key into the page and press Send. You can also type the key with the keyboard controller (Y).
 
-The key is saved in `pixel.ini` beside the app on the SD card and is only ever sent to the company it's for. You can switch to a different AI in Settings > Brain.
+The GameCube's clock is set from the internet first (secure connections need the right date). The key is saved in `pixel.ini` beside the app on the SD card and is only ever sent to the company it's for. You can switch to a different AI in Settings > Brain.
 
 ## Talking to him
 
-With the microphone in a memory card slot, hold A, ask your question, and let go. What you said goes to the AI to be written down (it shows in the "You" bubble), then on to him as the question. Up to 15 seconds at a time.
+With the microphone in a memory card slot, hold the button on the microphone (or A on the controller), ask your question, and let go. What you said goes to the AI to be written down (it shows in the "You" bubble), then on to him as the question. Up to 15 seconds at a time. While the microphone is being tried out, the last recording is kept as `heard.wav` beside the app, with a few details about it in `mic.txt`.
 
 Google Gemini and ChatGPT can listen. Claude can't take sound, so if Claude is his brain, also sign in to Gemini or ChatGPT (Settings > Brain, then switch back to Claude): that one writes down what you say, and Claude answers.
 
@@ -37,7 +37,7 @@ Google Gemini and ChatGPT can listen. Claude can't take sound, so if Claude is h
 
 | Button | |
 | --- | --- |
-| A (hold) | With the microphone: talk while you hold it; let go to ask |
+| Microphone button, or A (hold) | With the microphone: talk while you hold it; let go to ask |
 | A | Without the microphone: type a question |
 | Y | With the microphone and the keyboard: type a question |
 | Keyboard | Start typing to ask a question; Enter asks it |
