@@ -125,7 +125,7 @@ static void *player_main(void *arg) {
                 float rms = sqrtf((float)(e / (CHUNK / 4))) / 6000.0f;
                 levels[k] = rms > 1 ? 1 : rms;
             } else {
-                memset(chunks[k], 0, CHUNK * 2);
+                memcpy(chunks[k], quiet, CHUNK * 2);
                 levels[k] = 0;
             }
             DCFlushRange(chunks[k], CHUNK * 2);
@@ -145,7 +145,7 @@ static volatile u32 job_gen;
 static thr_mutex job_lock;
 
 /* the next sentence of text from *p into out (moves *p on); false at the end */
-static bool next_sentence(const char **p, char *out, size_t cap) {
+static bool next_sentence(const char **p, char *out, size_t cap, bool first) {
     const char *s = *p;
     while (*s == ' ' || *s == '\n') s++;
     if (!*s) return false;
@@ -159,6 +159,9 @@ static bool next_sentence(const char **p, char *out, size_t cap) {
             if (n > 24) break;   /* (very short ones ride along with the next) */
         }
         if (n > 220 && (c == ',' || c == ';' || c == ' ')) break;   /* long: break at a comma or a space */
+        /* the first piece short, so he starts talking sooner (the rest is
+         * made while it plays): at a comma, or after a few words */
+        if (first && ((n > 18 && (c == ',' || c == ';' || c == ':')) || (n > 48 && c == ' '))) break;
         if (n >= cap - 1) break;
     }
     memcpy(out, s, n);
@@ -194,7 +197,16 @@ static void *talk_main(void *arg) {
         making = true;
         const char *p = text;
         char sentence[400];
-        while (g == gen && next_sentence(&p, sentence, sizeof(sentence))) {
+        bool first = true;
+        /* a moment of quiet first, so the start of the first word isn't lost
+         * (some TVs and adapters take a moment to wake their sound up) */
+        {
+            static s16 lead[RATE / 8] __attribute__((aligned(32)));
+            for (int j = 0; j < RATE / 8; j++) lead[j] = (s16)((j * 7919 % 5) - 2);   /* (the faintest hiss, not silence) */
+            if (wpos == rpos) { ring_io(true, lead, wpos, RATE / 8 & ~15u); wpos += RATE / 8 & ~15u; }
+        }
+        while (g == gen && next_sentence(&p, sentence, sizeof(sentence), first)) {
+            first = false;
             cst_wave *w = NULL;
             cst_errjmp = &jb;
             if (!setjmp(jb)) w = flite_text_to_wave(sentence, voice);
@@ -227,6 +239,10 @@ static void *talk_main(void *arg) {
 
 void speech_init(void) {
     if (!AR_CheckInit()) AR_Init(NULL, 0);
+    /* between sentences: the faintest hiss, not digital silence (some TVs and
+     * HDMI adapters mute themselves during silence and clip the next word) */
+    for (int i = 0; i < CHUNK; i++) quiet[i] = (s16)((i * 7919 % 5) - 2);
+    DCFlushRange(quiet, sizeof(quiet));
     thr_mutex_init(&job_lock);
     pb = AESND_AllocateVoice(voice_cb);
     if (pb) {

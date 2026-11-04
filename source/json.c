@@ -167,12 +167,18 @@ static const char *step(const char *p, const char *key, size_t klen) {
 /* Unicode to the font's characters (CP-1252), with fallbacks */
 static int to_cp1252(unsigned u) {
     if (u < 0x80 || (u >= 0xA0 && u < 0x100)) return (int)u;
+    /* (the font has no curly quotes or long dashes, and the voice would trip
+     * on them: the plain ones instead, so "don't" keeps its apostrophe) */
+    switch (u) {
+    case 0x2018: case 0x2019: case 0x201A: case 0x201B: case 0x02BC: case 0x2032: return '\'';
+    case 0x201C: case 0x201D: case 0x201E: case 0x201F: case 0x2033: return '"';
+    case 0x2013: case 0x2014: case 0x2015: return '-';
+    case 0x2022: return 0x95;   /* a bullet: the font's middle dot */
+    }
     for (int i = 0; i < 32; i++) if (cp1252_hi[i] == u) return 0x80 + i;
     switch (u) {
     case 0x2010: case 0x2011: case 0x2012: case 0x2212: return '-';
     case 0x00A0: case 0x2002: case 0x2003: case 0x2009: case 0x202F: return ' ';
-    case 0x2032: return '\'';
-    case 0x2033: return '"';
     }
     return u >= 0x1F000 ? -1 : '?';   /* emoji and the like are dropped */
 }

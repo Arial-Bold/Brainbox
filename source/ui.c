@@ -850,6 +850,39 @@ static void head_pass(float x, float alpha_k, float mirror, PixelBox *box) {
 	frame_setup();
 }
 
+/* A line of the hologram's scanlines at depth: the depth test decides where
+ * it shows (behind everything he drew, in front of the cleared background). */
+#define SCAN_Z -0.999f
+static void scan_quad(float x0, float x1, float y, float h, Color cl, Color cr) {
+	GX_Begin(GX_QUADS, GX_VTXFMT1, 4);
+	GX_Position3f32(x0, y, SCAN_Z); GX_Color4u8(cl.r, cl.g, cl.b, cl.a); GX_TexCoord2f32(0, 0);
+	GX_Position3f32(x1, y, SCAN_Z); GX_Color4u8(cr.r, cr.g, cr.b, cr.a); GX_TexCoord2f32(0, 0);
+	GX_Position3f32(x1, y + h, SCAN_Z); GX_Color4u8(cr.r, cr.g, cr.b, cr.a); GX_TexCoord2f32(0, 0);
+	GX_Position3f32(x0, y + h, SCAN_Z); GX_Color4u8(cl.r, cl.g, cl.b, cl.a); GX_TexCoord2f32(0, 0);
+	GX_End();
+}
+
+static void scanlines(float cx, float top, float t) {
+	mode_color();
+	float off = fmodf(t * 12, 4);
+	Color line = rgba(6, 10, 40, 40);
+	/* on him: only where he was drawn (his depth is nearer than the line's) */
+	GX_SetZMode(GX_TRUE, ui_set.depth_flip ? GX_LESS : GX_GREATER, GX_FALSE);
+	for (float y = floorf(vt) + off - 4; y < vb; y += 4) scan_quad(vl, vr, y, 2, line, line);
+	/* on the beam round him: only where he wasn't drawn, fading out to the
+	 * beam's edges and its top, as the light does */
+	GX_SetZMode(GX_TRUE, ui_set.depth_flip ? GX_GEQUAL : GX_LEQUAL, GX_FALSE);
+	float py = HORIZON + 30, hb = 125, ht = 70;
+	for (float y = floorf(top) + off - 4; y < py; y += 4) {
+		float k = clamp01((y - top) / (py - top));     /* 0 at the top, 1 at the floor */
+		float hw = ht + (hb - ht) * k;
+		Color mid = rgba(6, 10, 40, (u8)(48 * (0.25f + 0.75f * k))), edge = rgba(6, 10, 40, 0);
+		scan_quad(cx - hw, cx, y, 2, edge, mid);
+		scan_quad(cx, cx + hw, y, 2, mid, edge);
+	}
+	GX_SetZMode(GX_FALSE, GX_ALWAYS, GX_FALSE);
+}
+
 static void stage(void) {
 	float t = now_ms() / 1000.0f;
 	pose_update(t);
@@ -867,12 +900,10 @@ static void stage(void) {
 	beam(cx, 60, 1);
 	PixelBox box;
 	head_pass(cx, 1, -1000, &box);
-	/* hologram scanlines over him */
-	if (box.x1 > box.x0) {
-		mode_color();
-		float off = fmodf(t * 12, 4);
-		for (float y = floorf(box.y0) - 4 + off; y < box.y1; y += 4) rect(box.x0, y, box.x1 - box.x0, 2, rgba(6, 10, 40, 40));
-	}
+	/* hologram scanlines: over him and his props (and his reflection) exactly,
+	 * using the depth he left behind, and over the beam around him */
+	(void)box;
+	scanlines(cx, 60, t);
 	sparkles(cx, t);
 	bloom();
 	/* fog round his head (the foggy-headed greeting) */
