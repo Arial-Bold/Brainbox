@@ -826,7 +826,9 @@ static void pose_update(float t) {
 	think_now += (sc.think - think_now) * clamp01(dt * 5);
 	brows_now += (sc.brows + (mouth > 0.3f ? 0.3f : 0) - brows_now) * clamp01(dt * 6);
 	fog_now += (sc.fog - fog_now) * clamp01(dt * 1.5f);
-	float target_x = sc.side ? 196 : 320;
+	/* the panels on the right (choosing an AI, signing in): he steps over to the left, clear of them */
+	bool panel_right = sc.overlay == UI_OVERLAY_BRAIN || sc.overlay == UI_OVERLAY_SIGNIN;
+	float target_x = panel_right ? 120 : sc.side ? 196 : 320;
 	px_now += (target_x - px_now) * clamp01(dt * 4);
 	float ch = sc.chuckle_at ? 1 - (now - sc.chuckle_at) / 900.0f : 0;
 	pose.t = t;
@@ -837,7 +839,7 @@ static void pose_update(float t) {
 	pose.chuckle = ch > 0 ? ch : 0;
 	pose.look_x = think_now > 0.3f ? 0.6f : 0.25f * sinf(t * 0.37f) * sinf(t * 0.23f);
 	pose.scribble = think_now;
-	pose.props = sc.props && !(sc.side && sc.him[0] && ui_set.captions);   /* (out of the way of his answer) */
+	pose.props = sc.props && !(sc.side && sc.him[0] && ui_set.captions) && !panel_right;   /* (out of the way of his answer, or the panel) */
 }
 
 static void frame_setup(void);
