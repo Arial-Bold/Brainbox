@@ -93,6 +93,14 @@ static void messages(Buf *b, const char *now, bool gemini) {
     }
 }
 
+/* Gemini: answer straight away, without "thinking" first (much quicker, and
+ * his answers are short). Turned off for good if a model won't take it. */
+static bool gemini_quick = true;
+static const char *QUICK = ",\"thinkingConfig\":{\"thinkingBudget\":0}";
+static bool thinking_refused(int status, const char *msg) {
+    return status == 400 && (strstr(msg, "hinking") || strstr(msg, "thinking_budget") || strstr(msg, "budget"));
+}
+
 /* The request for one model: url, headers and body; where the answer is */
 static const char *build(Buf *b_, char *url, size_t ucap, char *headers, size_t hcap, const char *use_model) {
     Buf b = { 0 };
@@ -105,7 +113,7 @@ static const char *build(Buf *b_, char *url, size_t ucap, char *headers, size_t 
         buf_add_json_string(&b, SYSTEM);
         buf_add(&b, "}]},\"contents\":[");
         messages(&b, question, true);
-        buf_add(&b, "],\"generationConfig\":{\"maxOutputTokens\":2048}}");
+        buf_addf(&b, "],\"generationConfig\":{\"maxOutputTokens\":2048%s}}", gemini_quick ? QUICK : "");
         path = "candidates.0.content.parts.0.text";
         break;
     case AI_CLAUDE:
@@ -189,7 +197,9 @@ static void run_question(void) {
         int status = https_post(url, headers, b.s, b.len, &resp, NULL, 256 * 1024, NULL, err, sizeof(err));
         buf_free(&b);
         if (status < 0) {
-            snprintf(answer, sizeof(answer), "%s", err);
+            if (strstr(err, "didn't answer") || strstr(err, "too long"))
+                snprintf(answer, sizeof(answer), "%s took too long to answer. It may be very busy: ask me again in a moment!", names[brain]);
+            else snprintf(answer, sizeof(answer), "%s", err);
             state = AI_FAILED;
             return;
         }
@@ -204,6 +214,7 @@ static void run_question(void) {
         json_get_string(resp, "error.message", msg, sizeof(msg));
         note_problem(use_model, status, resp);
         free(resp);
+        if (brain == AI_GEMINI && gemini_quick && thinking_refused(status, msg)) { gemini_quick = false; mi--; continue; }
         /* a model that isn't there (any more): try the next one */
         bool no_model = status == 404 || ((status == 400 || status == 403) && (strstr(msg, "model") || strstr(msg, "Model")) && !strstr(msg, "API key"));
         if (no_model) gone = true;
@@ -289,7 +300,7 @@ static bool transcribe(void) {
                                     "punctuation. Reply with only their words. If no one speaks, reply with just: -");
             buf_add(&b, "},{\"inlineData\":{\"mimeType\":\"audio/wav\",\"data\":\"");
             add_wav(&b, true);
-            buf_add(&b, "\"}}]}],\"generationConfig\":{\"maxOutputTokens\":400}}");
+            buf_addf(&b, "\"}}]}],\"generationConfig\":{\"maxOutputTokens\":400%s}}", gemini_quick ? QUICK : "");
         } else {
             snprintf(url, sizeof(url), "https://api.openai.com/v1/audio/transcriptions");
             snprintf(headers, sizeof(headers), "Content-Type: multipart/form-data; boundary=%s\r\nAuthorization: Bearer %s\r\n", BOUNDARY, ear_key);
@@ -320,6 +331,7 @@ static bool transcribe(void) {
         json_get_string(resp, "error.message", msg, sizeof(msg));
         AiBrain was = brain; brain = ear; note_problem(try_models[mi], status, resp); brain = was;
         free(resp);
+        if (ear == AI_GEMINI && gemini_quick && thinking_refused(status, msg)) { gemini_quick = false; mi--; continue; }
         bool no_model = status == 404 || ((status == 400 || status == 403) && (strstr(msg, "model") || strstr(msg, "Model")) && !strstr(msg, "API key"));
         if (no_model && mi + 1 < nm) continue;
         if (busy_status(status)) {

@@ -20,7 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define RECV_TIMEOUT_MS 20000
+#define RECV_TIMEOUT_MS 60000   /* (an AI can take a while to start answering when it is busy) */
 #define ERR_CANCELLED (-0x7F01)
 
 static mbedtls_entropy_context ent;
