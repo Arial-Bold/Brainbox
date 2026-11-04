@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Makes dist/opening.bnr: the 96x32 banner your Launcher shows for Professor
-Scotty (his head in the beam of light on the dark stage, and his name), with
-the name and description that go with it.
+"""Makes dist/opening.bnr: the 96x32 banner your Launcher shows for BrainBox
+(Professor Scotty's head in the beam of light on the dark stage, and the
+app's name), with the name and description that go with it.
 
     python3 tools/make_banner.py
 
@@ -16,11 +16,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 FONT = os.path.join(HERE, 'fonts', 'MPLUSRounded1c-ExtraBold-latin.ttf')
 
-SHORT_NAME = 'Professor Scotty'
+SHORT_NAME = 'BrainBox'
 SHORT_MAKER = 'Arial-Bold'
-LONG_NAME = 'Professor Scotty'
+LONG_NAME = 'BrainBox'
 LONG_MAKER = 'Arial-Bold'
-DESCRIPTION = 'A hologram professor who answers your questions out loud, with Groq, Gemini, Claude or ChatGPT.'
+DESCRIPTION = 'Ask Professor Scotty anything: a hologram professor who answers out loud, with Groq, Gemini, Claude or ChatGPT.'
 
 S = 8                       # drawn 8 times bigger, then shrunk (smooth edges)
 W, H = 96 * S, 32 * S
@@ -78,8 +78,8 @@ def banner_image():
     lmask = Image.new('L', (W, H), 0)
     lmask.paste(a, (hx, hy))
     img.paste(lines, (0, 0), Image.composite(lines, Image.new('RGBA', (W, H)), lmask).split()[3])
-    # the name: PROFESSOR small, SCOTTY big, in the apps' colours
-    x0 = int(W * 0.42)
+    # the name: BRAINBOX big, and who's in it small underneath, in the apps' colours
+    x0 = int(W * 0.40)
     def word(text, size, colour, y, spacing=0):
         f = ImageFont.truetype(FONT, size)
         t = Image.new('RGBA', (W, H), (0, 0, 0, 0))
@@ -90,9 +90,9 @@ def banner_image():
             td.text((x, y), ch, font=f, fill=colour)
             x += f.getlength(ch) + spacing
         return t, x
-    t1, _ = word('PROFESSOR', int(6.2 * S), (140, 220, 255, 255), int(5.5 * S), spacing=int(0.9 * S))
+    t2, xe = word('BRAINBOX', int(11.2 * S), (236, 235, 255, 255), int(3.0 * S), spacing=int(0.1 * S))
+    t1, _ = word('PROF. SCOTTY', int(5.6 * S), (140, 220, 255, 255), int(17.5 * S), spacing=int(0.7 * S))
     img = Image.alpha_composite(img, t1)
-    t2, xe = word('SCOTTY', int(12.5 * S), (236, 235, 255, 255), int(11 * S), spacing=int(0.3 * S))
     # (a soft blue glow behind the big word)
     g2 = t2.filter(ImageFilter.GaussianBlur(1.5 * S))
     img = Image.alpha_composite(img, Image.fromarray((np.array(g2) * [0.45, 0.7, 1.0, 0.9]).astype(np.uint8), 'RGBA'))
