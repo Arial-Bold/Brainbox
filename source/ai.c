@@ -171,11 +171,15 @@ static bool network(void) {
     return false;
 }
 
+/* the service is busy or down for a moment (or this model's allowance is used up): worth another try */
+static bool busy_status(int status) { return status == 429 || status == 500 || status == 502 || status == 503 || status == 504; }
+
 static void run_question(void) {
     char err[200] = "";
     const char *models_[5];
     int nm = candidates(models_);
-    for (int mi = 0; mi < nm; mi++) {
+    bool gone = false;   /* the usual model has gone (as opposed to just being busy) */
+    for (int pass = 0, mi = 0; mi < nm; mi++) {
         const char *use_model = models_[mi];
         Buf b;
         char url[300], headers[400];
@@ -190,7 +194,7 @@ static void run_question(void) {
             return;
         }
         if (status == 200 && json_get_string(resp, path, answer, sizeof(answer)) && answer[0]) {
-            if (strcmp(use_model, model)) snprintf(model, sizeof(model), "%s", use_model);   /* (this one works: keep it) */
+            if (gone && strcmp(use_model, model)) snprintf(model, sizeof(model), "%s", use_model);   /* (the usual one has gone: keep this one) */
             if (!testing) { remember(true, question); remember(false, answer); }
             free(resp);
             state = AI_DONE;
@@ -202,9 +206,17 @@ static void run_question(void) {
         free(resp);
         /* a model that isn't there (any more): try the next one */
         bool no_model = status == 404 || ((status == 400 || status == 403) && (strstr(msg, "model") || strstr(msg, "Model")) && !strstr(msg, "API key"));
+        if (no_model) gone = true;
         if (no_model && mi + 1 < nm) continue;
+        /* busy (or out of its allowance): another model, then one more go round after a moment */
+        if (busy_status(status)) {
+            if (mi + 1 < nm) continue;
+            if (pass++ == 0) { thr_sleep_ms(2000); mi = -1; continue; }
+        }
         if (status == 401 || status == 403 || (status == 400 && strstr(msg, "API key")))
             snprintf(answer, sizeof(answer), "%s didn't accept the key. (%s)", names[brain], msg[0] ? msg : "error");
+        else if (status >= 500)
+            snprintf(answer, sizeof(answer), "%s is very busy. Ask me again in a moment!", names[brain]);
         else if (status == 429)
             snprintf(answer, sizeof(answer), "%s says that's too many questions for now: try again in a minute. (%s)", names[brain], msg);
         else if (status == 200)
@@ -255,18 +267,19 @@ static bool transcribe(void) {
     char url[300], headers[500], err[200] = "";
     const char *path;
     static const char *BOUNDARY = "PixelSaid7d1f0c3a";
-    const char *try_models[3];
+    const char *try_models[5];
     int nm = 0;
     if (ear == AI_GEMINI) {
+        static const char *more[3] = { "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3.1-flash-lite" };
         try_models[nm++] = ear_model[0] ? ear_model : models[AI_GEMINI];
-        if (strcmp(try_models[0], "gemini-2.5-flash")) try_models[nm++] = "gemini-2.5-flash";
+        for (int i = 0; i < 3; i++) if (strcmp(try_models[0], more[i])) try_models[nm++] = more[i];
         path = "candidates.0.content.parts.0.text";
     } else {
         try_models[nm++] = "gpt-4o-mini-transcribe";
         try_models[nm++] = "whisper-1";
         path = "text";
     }
-    for (int mi = 0; mi < nm; mi++) {
+    for (int pass = 0, mi = 0; mi < nm; mi++) {
         Buf b = { 0 };
         if (ear == AI_GEMINI) {
             snprintf(url, sizeof(url), "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent", try_models[mi]);
@@ -309,8 +322,14 @@ static bool transcribe(void) {
         free(resp);
         bool no_model = status == 404 || ((status == 400 || status == 403) && (strstr(msg, "model") || strstr(msg, "Model")) && !strstr(msg, "API key"));
         if (no_model && mi + 1 < nm) continue;
+        if (busy_status(status)) {
+            if (mi + 1 < nm) continue;
+            if (pass++ == 0) { thr_sleep_ms(2000); mi = -1; continue; }
+        }
         if (status == 401 || status == 403 || (status == 400 && strstr(msg, "API key")))
             snprintf(answer, sizeof(answer), "%s didn't accept the key for listening. (%s)", names[ear], msg[0] ? msg : "error");
+        else if (status >= 500)
+            snprintf(answer, sizeof(answer), "%s is very busy, so I couldn't hear you properly. Try me again in a moment!", names[ear]);
         else if (status == 429)
             snprintf(answer, sizeof(answer), "%s says that's too much listening for now: try again in a minute. (%s)", names[ear], msg);
         else
