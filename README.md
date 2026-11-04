@@ -3,7 +3,7 @@
 Professor Pixel is a kindly old hologram professor who lives in your GameCube. Ask him anything by talking into the GameCube Microphone or typing on the keyboard controller, and he answers out loud, floating in a beam of light, using the AI of your choice: open models on **Groq** (Llama and others), **Google Gemini**, **Claude** or **ChatGPT**.
 
 - He's drawn in 3D on the GameCube's own graphics chip, as one smoothly sculpted head: soft lighting, a hologram shimmer, a glow, sparkles and a reflection on the floor. He blinks, raises his eyebrows, puts his spectacles on to think, and his mouth moves with his voice.
-- His voice is made on the GameCube itself with [Flite](https://github.com/festvox/flite), the speech engine from Carnegie Mellon University: no account or internet needed for it. He starts speaking a sentence at a time, and the speech is kept in the GameCube's audio memory (ARAM).
+- His voice is made on the GameCube itself with [Flite](https://github.com/festvox/flite), the speech engine from Carnegie Mellon University, in its Scottish voice (awb): no account or internet needed for it. Sounds like "Hmm", everyday slang and abbreviations are tidied first so he says them naturally. He starts speaking a sentence at a time, and the speech is kept in the GameCube's audio memory (ARAM).
 - The AI is reached directly over HTTPS through the network adapter, with your own API key.
 
 It runs on the GameCube only.
