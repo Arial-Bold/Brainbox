@@ -52,10 +52,10 @@ def pad_to(img, mw, mh):
 # --------------------------------------------------------------------- font
 
 def glyph_chars():
-    """byte value -> unicode character (ASCII, Latin-1, and the ellipsis at 0x85 as in Windows-1252)"""
+    """byte value -> unicode character (ASCII, Latin-1, and the ellipsis at 0x85 as in Windows-1252, drawn as three full stops)"""
     m = {c: chr(c) for c in range(32, 127)}
     m.update({c: chr(c) for c in range(160, 256)})
-    m[0x85] = '…'
+    m[0x85] = '...'   # (three full stops on the line: this font's own ellipsis sits up in the middle)
     m[0x95] = '·'   # (spare: a middle dot)
     return m
 
