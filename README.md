@@ -1,5 +1,8 @@
 # BrainBox
 
+<img width="640" height="480" alt="03-thinking" src="https://github.com/user-attachments/assets/2847bd01-e334-445d-9434-e5a503546c84" />
+
+
 BrainBox puts Professor Scotty, a kindly old hologram professor, in your GameCube. Ask him anything by talking into the GameCube Microphone or typing on the keyboard controller, and he answers out loud, floating in a beam of light, using the AI of your choice: open models on **Groq** (Llama and others), **Google Gemini**, **Claude** or **ChatGPT**.
 
 - He's drawn in 3D on the GameCube's own graphics chip, as one smoothly sculpted head: soft lighting, a hologram shimmer, a glow, sparkles and a reflection on the floor. He blinks, raises his eyebrows, puts his spectacles on to think, and his mouth moves with his voice.
@@ -23,11 +26,17 @@ Download `brainbox.zip` from the Releases page and copy the `brainbox` folder in
 
 ## Signing in
 
+<img width="640" height="480" alt="05-choose-ai" src="https://github.com/user-attachments/assets/66c1c1d5-b74f-46b6-9a94-a45a0c041695" />
+
+
 The first time, the professor's head is a little foggy: he needs a brain. Choose Groq, Google Gemini, Claude or ChatGPT, and a sign-in page appears with a QR code. Scan it with your phone (or open the address on a computer on the same network). The page links to that company's own site, where you sign in with your account and make an API key; paste the key into the page and press Send. You can also type the key with the keyboard controller (Y).
 
 The GameCube's clock is set from the internet first (secure connections need the right date). The key is saved in `brainbox.ini` beside the app on the SD card and is only ever sent to the company it's for. You can switch to a different AI in Settings > Brain.
 
 ## Talking to him
+
+<img width="640" height="480" alt="07-typing" src="https://github.com/user-attachments/assets/c3de0fe1-1dd3-4015-9bc7-814f30180b5e" />
+
 
 With the microphone in a memory card slot, hold the button on the microphone (or A on the controller), ask your question, and let go. What you said goes to the AI to be written down (it shows in the "You" bubble), then on to him as the question. Up to 15 seconds at a time. While the microphone is being tried out, the last recording is kept as `heard.wav` beside the app, with a few details about it in `mic.txt`.
 
@@ -63,6 +72,9 @@ Groq, Google Gemini and ChatGPT can listen. When Groq is signed in, it always do
 A few more can be set by hand in `brainbox.ini`: `groq.model`, `gemini.model`, `claude.model` and `openai.model` choose a different model for each service (empty for the usual one), `display.glow=0` turns the glow off, and `display.intro=0` skips the opening (Professor Scotty switching on as a hologram, with its sound). Holding Z as BrainBox starts skips it just that once.
 
 ## Updates
+
+<img width="640" height="480" alt="10-update-available" src="https://github.com/user-attachments/assets/8129eff9-703a-4043-ba25-9eabb4ad93da" />
+
 
 BrainBox checks GitHub quietly when it starts, and if there's a newer version it says so. Settings > Updates checks again, and installs the new version with A: it's downloaded and unpacked on the SD card, then replaces this one (your settings and keys are kept), and A again restarts into it. The version it replaced is removed the next time BrainBox starts.
 
