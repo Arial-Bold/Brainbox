@@ -139,6 +139,13 @@ static struct {
 	unsigned char qr[177 * 177];
 	int qr_size;
 	char addr[64], sign_state[400];
+	/* the Software Update window */
+	bool upd_open;
+	u32 upd_at;
+	char upd_head[96], upd_sub[TXT], upd_notes[4000], upd_btn[2][24];
+	bool upd_gold, upd_busy;
+	float upd_progress;
+	int upd_button, upd_scroll, upd_more, upd_lines;
 } sc;
 
 static mutex_t lock = LWP_MUTEX_NULL;
@@ -209,6 +216,37 @@ void ui_overlay_tag(int r, const char *t, bool gold) {
 void ui_overlay_note(const char *t, const char *x) { L(); cpy(sc.note_title, t, sizeof(sc.note_title)); cpy(sc.note, x, sizeof(sc.note)); U(); }
 void ui_overlay_select(int r) { L(); sc.osel = r; U(); }
 void ui_overlay_rows(int n) { L(); sc.orow_count = n; U(); }
+void ui_update_open(bool o) {
+	L();
+	if (o && !sc.upd_open) { sc.upd_at = now_ms(); sc.upd_scroll = 0; }
+	sc.upd_open = o;
+	U();
+}
+void ui_update_view(const char *head, const char *sub, bool gold, bool busy, float progress,
+                    const char *notes, const char *left, const char *right, int button) {
+	L();
+	cpy(sc.upd_head, head, sizeof(sc.upd_head));
+	cpy(sc.upd_sub, sub, sizeof(sc.upd_sub));
+	if (strcmp(sc.upd_notes, notes ? notes : "")) { cpy(sc.upd_notes, notes, sizeof(sc.upd_notes)); sc.upd_scroll = 0; }
+	cpy(sc.upd_btn[0], left, sizeof(sc.upd_btn[0]));
+	cpy(sc.upd_btn[1], right, sizeof(sc.upd_btn[1]));
+	sc.upd_gold = gold;
+	sc.upd_busy = busy;
+	sc.upd_progress = progress;
+	sc.upd_button = button;
+	U();
+}
+void ui_update_scroll(int lines) {
+	L();
+	if (lines < -1000) sc.upd_scroll = 0;
+	else {
+		sc.upd_scroll += lines;
+		if (sc.upd_scroll > sc.upd_lines) sc.upd_scroll = sc.upd_lines;
+		if (sc.upd_scroll < 0) sc.upd_scroll = 0;
+	}
+	U();
+}
+int ui_update_more(void) { return sc.upd_more; }
 void ui_signin(const unsigned char *qr, int size, const char *addr, const char *state) {
 	L();
 	if (qr && size > 0 && size <= 177) { memcpy(sc.qr, qr, (size_t)size * size); sc.qr_size = size; } else sc.qr_size = 0;
@@ -1317,6 +1355,91 @@ static void signin_panel(void) {
 	text(x + 30, y + h - 26, "Saved on the SD card. You never type a password here.", 10, rgba(205, 212, 235, 255), 0, w - 60);
 }
 
+/* the Software Update window, as Flashcube's and CubeVerse's: what's new in
+ * the newest version on GitHub, and buttons to install it and restart */
+static void update_panel(void) {
+	if (!sc.upd_open) return;
+	float a = ease(clamp01((now_ms() - sc.upd_at) / 200.0f));
+	rect(vl, vt, vr - vl, vb - vt, rgba(0, 0, 0, (u8)(130 * a)));
+	float w = 540, h = 316, x = 320 - w / 2, y = 46 + 8 * (1 - a);
+	panel(x, y, w, h);
+	text(x + 16, y + 18, "Software Update", 13, TITLE, 0, 300);
+	char ver[48];
+	extern const char appversion[];
+	snprintf(ver, sizeof(ver), "BrainBox %s", appversion);
+	text(x + w - 16, y + 18, ver, 11, SOFT, 2, 200);
+	rule(x + 12, y + 32, w - 24);
+	/* the headline */
+	float hx = x + 20, hy = y + 54;
+	if (sc.upd_gold) {
+		circle(hx + 8, hy, 9, GOLD);
+		/* a tick */
+		mode_color();
+		GX_Begin(GX_QUADS, GX_VTXFMT0, 8);
+		Color dk = rgba(40, 30, 8, 255);
+		vtx(hx + 3.2f, hy + 0.2f, dk, 0, 0); vtx(hx + 5.0f, hy - 1.6f, dk, 0, 0); vtx(hx + 8.2f, hy + 1.6f, dk, 0, 0); vtx(hx + 6.4f, hy + 3.4f, dk, 0, 0);
+		vtx(hx + 6.4f, hy + 3.4f, dk, 0, 0); vtx(hx + 11.6f, hy - 4.6f, dk, 0, 0); vtx(hx + 13.4f, hy - 2.8f, dk, 0, 0); vtx(hx + 8.2f, hy + 5.2f, dk, 0, 0);
+		GX_End();
+		hx += 26;
+	}
+	text(hx, hy, sc.upd_head, 18, TEXT, 0, x + w - 60 - hx);
+	if (sc.upd_busy) {   /* a ring of dots going round */
+		float t = now_ms() / 1000.0f, cx = x + w - 34, cy = hy;
+		for (int i = 0; i < 8; i++) {
+			float ang = i * 6.2832f / 8;
+			float k = fmodf(t * 1.4f - i / 8.0f + 10, 1.0f);
+			circle(cx + cosf(ang) * 8, cy + sinf(ang) * 8, 2.0f, rgba(200, 215, 255, (u8)(60 + 195 * (1 - k))));
+		}
+	}
+	text(x + 20, hy + 22, sc.upd_sub, 12, SOFT, 0, w - 40);
+	/* what's new */
+	float bx = x + 16, by = hy + 40, bw = w - 32, bh = y + h - 64 - by - (sc.upd_progress >= -1 ? 20 : 0);
+	if (sc.upd_notes[0]) {
+		rrect_v(bx, by, bw, bh, 4, rgba(0, 0, 0, 95), rgba(0, 0, 0, 110));
+		outline(bx, by, bw, bh, 4, 1, rgba(200, 210, 230, 60));
+		text(bx + 12, by + 13, "What's new", 12, TITLE, 0, 200);
+		static char lines[80][160], src[4000];
+		/* (bullets as a dot and a space) */
+		size_t o = 0;
+		for (const char *p = sc.upd_notes; *p && o + 3 < sizeof(src); p++) {
+			if (*p == '\x7f') { src[o++] = '\x95'; src[o++] = ' '; }
+			else src[o++] = *p;
+		}
+		src[o] = 0;
+		int n = wrap(src, 12, bw - 44, lines, 80);
+		const float lh = 17, ly = by + 32;
+		int vis = (int)((bh - 38) / lh);
+		sc.upd_lines = n > vis ? n - vis : 0;
+		if (sc.upd_scroll > sc.upd_lines) sc.upd_scroll = sc.upd_lines;
+		int first = sc.upd_scroll;
+		for (int i = 0; i < vis && first + i < n; i++) text(bx + 14, ly + i * lh + lh / 2, lines[first + i], 12, TEXT, 0, 0);
+		sc.upd_more = n - (first + vis) > 0 ? n - (first + vis) : 0;
+		float mx = bx + bw - 16;
+		if (first > 0) tri(mx - 5, ly + 6, mx + 5, ly + 6, mx, ly, SOFT);
+		if (sc.upd_more) { float yy = ly + vis * lh - 6; tri(mx - 5, yy, mx + 5, yy, mx, yy + 6, SOFT); }
+	} else sc.upd_more = sc.upd_lines = 0;
+	/* how far the install has got */
+	if (sc.upd_progress >= -1) {
+		float gy = sc.upd_notes[0] ? by + bh + 8 : by + 20, gx = bx + 2, gw = bw - 4;
+		rrect_v(gx, gy, gw, 8, 3, rgba(0, 0, 0, 140), rgba(0, 0, 0, 140));
+		outline(gx, gy, gw, 8, 3, 1, rgba(200, 210, 230, 80));
+		if (sc.upd_progress >= 0) rect_v(gx + 1, gy + 1, (gw - 2) * clamp01(sc.upd_progress), 6, rgba(122, 108, 255, 255), rgba(59, 44, 182, 255));
+		else { float k = fmodf(now_ms() / 1000.0f * 0.6f, 1.0f); rect(gx + 1 + (gw - 62) * k, gy + 1, 60, 6, rgba(122, 108, 255, 255)); }
+	}
+	/* the buttons */
+	float bwid = 170, gap = 36, yb = y + h - 46, bhgt = 30;
+	for (int b = 0; b < 2; b++) {
+		if (!sc.upd_btn[b][0]) continue;
+		float bxx = sc.upd_btn[0][0] ? (b == 0 ? 320 - gap / 2 - bwid : 320 + gap / 2) : 320 - bwid / 2;
+		bool on = sc.upd_button == b;
+		rrect_v(bxx, yb, bwid, bhgt, 4, rgba(76, 94, 114, on ? 235 : 150), rgba(40, 54, 70, on ? 240 : 160));
+		rect(bxx + 3, yb + 1, bwid - 6, 1, rgba(255, 255, 255, 40));
+		outline(bxx, yb, bwid, bhgt, 4, 1, rgba(215, 225, 240, on ? 150 : 80));
+		text(bxx + bwid / 2, yb + bhgt / 2, sc.upd_btn[b], 14, on ? TEXT : SOFT, 1, bwid - 16);
+		if (on) gold_ring(bxx, yb, bwid, bhgt);
+	}
+}
+
 static void overlay_panel(void) {
 	if (sc.overlay == UI_OVERLAY_NONE) return;
 	if (sc.overlay == UI_OVERLAY_LIST) { rect(vl, vt, vr - vl, vb - vt, rgba(0, 0, 0, 120)); list_panel(); }
@@ -1397,6 +1520,7 @@ static void draw_frame(void) {
 	caption();
 	overlay_panel();
 	if (sc.screen == UI_SETTINGS) settings_screen();
+	update_panel();
 	if (sc.screen == UI_SETTINGS || sc.overlay == UI_OVERLAY_LIST || sc.overlay == UI_OVERLAY_SIGNIN) {
 		if (sc.status1[0] && sc.screen == UI_SETTINGS) status_bar();
 	}

@@ -327,8 +327,8 @@ static const char *updates_value(void) {
 	switch (update_state()) {
 	case UPD_CHECKING: snprintf(v, sizeof(v), "\x02" "Checking\x85"); break;
 	case UPD_LATEST: snprintf(v, sizeof(v), "\x02" "Up to date (%s)", appversion); break;
-	case UPD_AVAILABLE: snprintf(v, sizeof(v), "\x02" "Version %s: A to install", update_latest_version()); break;
-	case UPD_CHECK_FAILED: snprintf(v, sizeof(v), "\x02" "Couldn't check: A to try again"); break;
+	case UPD_AVAILABLE: snprintf(v, sizeof(v), "\x02" "Version %s is available", update_latest_version()); break;
+	case UPD_CHECK_FAILED: snprintf(v, sizeof(v), "\x02" "Couldn't check"); break;
 	case UPD_INSTALLING: {
 		static const char *steps[] = { "Connecting", "Downloading", "Unpacking", "Installing" };
 		float p = update_progress();
@@ -336,9 +336,9 @@ static const char *updates_value(void) {
 		else snprintf(v, sizeof(v), "\x02%s\x85", steps[update_step()]);
 		break;
 	}
-	case UPD_INSTALLED: snprintf(v, sizeof(v), "\x02" "Installed: A to restart"); break;
-	case UPD_FAILED: snprintf(v, sizeof(v), "\x02" "Didn't install: A to try again"); break;
-	default: snprintf(v, sizeof(v), "\x02%s: A to check", appversion); break;
+	case UPD_INSTALLED: snprintf(v, sizeof(v), "\x02" "Installed: restart to use it"); break;
+	case UPD_FAILED: snprintf(v, sizeof(v), "\x02" "Didn't install"); break;
+	default: snprintf(v, sizeof(v), "\x02%s", appversion); break;
 	}
 	return v;
 }
@@ -375,7 +375,7 @@ static void settings_help(int row) {
 		{ "Menu sounds", "How loud the sounds are when you move and choose. Off for none." },
 		{ "Captions", "Shows his answers in a bubble as he speaks." },
 		{ "Brain", "Which AI he uses: Groq, Google Gemini, Claude or ChatGPT. A to change or sign in." },
-		{ "Updates", "Checks GitHub for a newer BrainBox and installs it. Your settings and keys are kept." },
+		{ "Updates", "Opens Software Update: checks GitHub for a newer BrainBox, shows what's new and installs it." },
 		{ "Launcher", "The program at the root of the SD card that Exit to Launcher starts." },
 		{ "Exit to Launcher", "Leaves BrainBox." },
 	};
@@ -384,6 +384,104 @@ static void settings_help(int row) {
 		ui_status("Updates", update_error());
 	if (row >= S_BRAIN && row != S_LAUNCHER) hints(3, "S:Move", "A:Select", "B:Back");
 	else hints(3, "S:Move", "A:Change", "B:Back");
+}
+
+/* the Software Update window: what's new in the newest version on GitHub,
+ * and buttons to install it, restart into it or close (as Flashcube and
+ * CubeVerse have). An install carries on if it's closed; the Updates row
+ * shows how it's going. */
+static void update_buttons(const char **l, const char **r) {
+	*l = *r = NULL;
+	switch (update_state()) {
+	case UPD_NONE:
+	case UPD_CHECKING: *r = "Close"; break;
+	case UPD_LATEST: *l = "Check Again"; *r = "Close"; break;
+	case UPD_CHECK_FAILED: *l = "Try Again"; *r = "Close"; break;
+	case UPD_AVAILABLE: *l = "Install"; *r = "Later"; break;
+	case UPD_INSTALLING: *r = "Stop"; break;
+	case UPD_INSTALLED: *l = "Restart Now"; *r = "Later"; break;
+	case UPD_FAILED: *l = "Try Again"; *r = "Close"; break;
+	}
+}
+
+static const char *update_button_help(const char *b) {
+	if (!b) return "";
+	if (!strcmp(b, "Install")) return "Downloads the new version from GitHub and puts it in place of this one. Your settings and keys are kept.";
+	if (!strcmp(b, "Restart Now")) return "Starts the new version of BrainBox now.";
+	if (!strcmp(b, "Stop")) return "Stops the download. Nothing is changed.";
+	if (!strcmp(b, "Check Again") || !strcmp(b, "Try Again")) return "Asks GitHub again for the newest version.";
+	if (!strcmp(b, "Later")) return "Closes this window. Settings > Updates brings it back.";
+	return "Closes this window.";
+}
+
+static void update_window(void) {
+	UpdateState s = update_state();
+	if (s == UPD_NONE || s == UPD_LATEST || s == UPD_CHECK_FAILED) update_request_check(false);
+	ui_update_open(true);
+	int button = 0;
+	dir_sounds = false;
+	wait_release();
+	for (;;) {
+		s = update_state();
+		const char *l, *r;
+		update_buttons(&l, &r);
+		if (!l) button = 1;
+		/* what it says */
+		char head[96], sub[160];
+		const char *v = update_latest_version();
+		sub[0] = 0;
+		float progress = -2;
+		switch (s) {
+		case UPD_NONE:
+		case UPD_CHECKING: snprintf(head, sizeof(head), "Checking for a new version\x85"); snprintf(sub, sizeof(sub), "Asking GitHub (github.com/%s).", UPDATE_REPO); break;
+		case UPD_LATEST: snprintf(head, sizeof(head), "BrainBox is up to date"); snprintf(sub, sizeof(sub), "You have version %s, the newest one.", appversion); break;
+		case UPD_CHECK_FAILED: snprintf(head, sizeof(head), "Couldn't check for updates"); snprintf(sub, sizeof(sub), "%s", update_error()); break;
+		case UPD_AVAILABLE: snprintf(head, sizeof(head), "BrainBox %s is available", v); snprintf(sub, sizeof(sub), "You have version %s.", appversion); break;
+		case UPD_INSTALLING: {
+			UpdateStep st = update_step();
+			snprintf(head, sizeof(head), "Installing BrainBox %s", v);
+			snprintf(sub, sizeof(sub), "%s", st == UPD_STEP_NETWORK ? "Connecting to the network\x85" : st == UPD_STEP_DOWNLOAD ? "Downloading\x85"
+			                                 : st == UPD_STEP_UNPACK ? "Unpacking\x85" : "Putting the new version in place\x85");
+			progress = update_progress() >= 0 ? update_progress() : -1;
+			break;
+		}
+		case UPD_INSTALLED: snprintf(head, sizeof(head), "BrainBox %s is installed", v); snprintf(sub, sizeof(sub), "Restart BrainBox to start using it."); break;
+		case UPD_FAILED: snprintf(head, sizeof(head), "The update didn't finish"); snprintf(sub, sizeof(sub), "%s", update_error()); break;
+		}
+		bool notes = s == UPD_AVAILABLE || s == UPD_INSTALLING || s == UPD_INSTALLED || s == UPD_FAILED;
+		ui_update_view(head, sub, s == UPD_AVAILABLE || s == UPD_INSTALLED, s == UPD_CHECKING || s == UPD_NONE || s == UPD_INSTALLING,
+		               progress, notes ? update_notes() : "", l, r, button);
+		const char *chosen = button == 0 ? l : r;
+		ui_status(chosen ? chosen : "", update_button_help(chosen));
+		if (notes && update_notes()[0]) hints(4, "S:Choose", "S:Scroll", "A:Confirm", "B:Close");
+		else hints(3, "S:Choose", "A:Confirm", "B:Close");
+
+		read_input();
+		if ((down & PAD_BUTTON_LEFT) && l && button == 1) { button = 0; sound_play(SFX_HOVER); }
+		if ((down & PAD_BUTTON_RIGHT) && button == 0) { button = 1; sound_play(SFX_HOVER); }
+		if (down & PAD_BUTTON_UP) ui_update_scroll(-1);
+		if (down & PAD_BUTTON_DOWN) ui_update_scroll(1);
+		if (down & (PAD_BUTTON_B | PAD_BUTTON_START)) break;
+		if (down & PAD_BUTTON_A) {
+			if (!chosen) continue;
+			if (!strcmp(chosen, "Install")) { update_request_install(); button = 1; }
+			else if (!strcmp(chosen, "Restart Now")) {
+				save_settings();
+				ui_status("Restarting BrainBox\x85", "");
+				char err[160];
+				if (!update_restart(err, sizeof(err))) ui_toast(err);
+			} else if (!strcmp(chosen, "Stop")) update_cancel();
+			else if (!strcmp(chosen, "Check Again") || !strcmp(chosen, "Try Again")) {
+				if (s == UPD_FAILED) update_request_install();
+				else update_request_check(false);
+				button = 0;
+			} else break;
+			wait_release();
+		}
+	}
+	ui_update_open(false);
+	dir_sounds = true;
+	wait_release();
 }
 
 static void settings(void) {
@@ -440,13 +538,7 @@ static void settings(void) {
 				continue;
 			}
 			if (row == S_UPDATES) {
-				UpdateState st = update_state();
-				if (st == UPD_AVAILABLE) update_request_install();
-				else if (st == UPD_INSTALLED) {
-					if (memcmp(&before, &ui_set, sizeof(ui_set))) save_settings();
-					char err[160];
-					if (!update_restart(err, sizeof(err))) ui_toast(err);
-				} else if (st != UPD_CHECKING && st != UPD_INSTALLING) update_request_check(false);
+				update_window();
 				settings_rows();
 				settings_help(row);
 				wait_release();

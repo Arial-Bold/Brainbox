@@ -92,6 +92,17 @@ bool ui_intro_done(void);
 void ui_beam_away(void);
 bool ui_beam_done(void);
 
+/* the Software Update window (over Settings): the headline and the line
+ * under it, the release notes ("What's new"), how far the install has got
+ * (progress < -1: no bar; -1: busy, amount unknown; 0..1), the two buttons
+ * (left may be NULL: just the right one) and which is chosen (0 left, 1
+ * right). busy shows a spinner, gold a mark by the headline. */
+void ui_update_open(bool open);
+void ui_update_view(const char *head, const char *sub, bool gold, bool busy, float progress,
+                    const char *notes, const char *left, const char *right, int button);
+void ui_update_scroll(int lines);   /* the notes, a line at a time (lines < 0 big: back to the top) */
+int  ui_update_more(void);          /* lines of notes below the box (0: all showing) */
+
 /* panels over the stage */
 enum { UI_OVERLAY_NONE, UI_OVERLAY_LIST, UI_OVERLAY_BRAIN, UI_OVERLAY_SIGNIN };
 #define UI_OVERLAY_ROWS 12

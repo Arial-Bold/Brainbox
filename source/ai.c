@@ -18,7 +18,7 @@ static const char *SYSTEM =
     "You are Professor Scotty, a kindly, cheerful, slightly absent-minded old professor who lives as a "
     "hologram inside a Nintendo GameCube. Your replies are read aloud by a simple speech synthesizer and "
     "shown in a small speech bubble, so: answer in one to four short sentences of plain spoken English; "
-    "no lists, headings, markdown, emoji or web addresses; write numbers and symbols the way they are "
+    "no lists, headings, markdown (no asterisks or underscores, not even around titles), emoji or web addresses; write numbers and symbols the way they are "
     "said aloud when that is clearer. Be warm, curious and encouraging, with an old professor's gentle "
     "humor; now and then begin with 'Ah!' or 'Hmm.' You're a Scot: now and then a light Scottish word like 'aye', 'wee' or 'och' fits, but don't overdo it. If a question needs a long answer, give the heart of "
     "it and offer to say more. You are an AI character, not a real person.";
@@ -183,6 +183,22 @@ static bool network(void) {
 /* the service is busy or down for a moment (or this model's allowance is used up): worth another try */
 static bool busy_status(int status) { return status == 429 || status == 500 || status == 502 || status == 503 || status == 504; }
 
+/* markdown the AI sometimes uses anyway (*Fallen*, **bold**, # headings, `code`), taken out for the bubble and the voice */
+static void plain_text(char *s) {
+    char *o = s;
+    for (char *p = s; *p; p++) {
+        if (*p == '*' || *p == '`' || *p == '#') continue;
+        /* _like this_ (but not snake_case) */
+        if (*p == '_' && (p == s || p[-1] == ' ' || !p[1] || p[1] == ' ' || p[1] == '.' || p[1] == ',')) continue;
+        *o++ = *p;
+    }
+    *o = 0;
+    /* and no doubled spaces left behind */
+    o = s;
+    for (char *p = s; *p; p++) { if (*p == ' ' && o > s && o[-1] == ' ') continue; *o++ = *p; }
+    *o = 0;
+}
+
 static void run_question(void) {
     char err[200] = "";
     const char *models_[5];
@@ -205,6 +221,7 @@ static void run_question(void) {
             return;
         }
         if (status == 200 && json_get_string(resp, path, answer, sizeof(answer)) && answer[0]) {
+            plain_text(answer);
             if (gone && strcmp(use_model, model)) snprintf(model, sizeof(model), "%s", use_model);   /* (the usual one has gone: keep this one) */
             if (!testing) { remember(true, question); remember(false, answer); }
             free(resp);

@@ -160,6 +160,7 @@ static bool next_sentence(const char **p, char *out, size_t cap, bool first) {
             if (n > 24) break;   /* (very short ones ride along with the next) */
         }
         if (n > 220 && (c == ',' || c == ';' || c == ' ')) break;   /* long: break at a comma or a space */
+        if (n > 110 && (c == ',' || c == ';' || c == ':')) break;   /* (pieces kept short, so the next is ready in time) */
         /* the first piece short, so he starts talking sooner (the rest is
          * made while it plays): at a comma, or after a few words */
         if (first && ((n > 18 && (c == ',' || c == ';' || c == ':')) || (n > 48 && c == ' '))) break;
@@ -257,7 +258,10 @@ void speech_init(void) {
     thr_create(&t1, player_main, NULL, 16 * 1024, 70);
     /* Flite nests deeply: a big stack, and a low priority (drawing comes first) */
     static u8 stack[512 * 1024] __attribute__((aligned(32)));
-    LWP_CreateThread(&t2, talk_main, NULL, stack, sizeof(stack), 40);
+    /* (above the main thread and the background work, so he isn't left
+     * waiting for the next sentence mid-answer; below the drawing and the
+     * player, which keep the picture and the sound smooth) */
+    LWP_CreateThread(&t2, talk_main, NULL, stack, sizeof(stack), 66);
 }
 
 bool speech_ready(void) { return ready; }

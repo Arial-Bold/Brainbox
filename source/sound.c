@@ -80,7 +80,7 @@ static void *synth_main(void *arg) {
 	synth_holo();
 	/* (the opening's sound is made first, ahead of everything else, so the
 	 * opening isn't kept waiting; the rest are made in the background) */
-	LWP_SetThreadPriority(LWP_GetSelf(), 60);
+	LWP_SetThreadPriority(LWP_GetSelf(), 30);   /* (behind his voice, too) */
 	for (unsigned k = 0; k < sizeof(synth_order) / sizeof(synth_order[0]) && !synth_quit; k++) synth(synth_order[k]);
 	if (!synth_quit) synth_shimmer();
 	return NULL;
