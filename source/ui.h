@@ -30,10 +30,10 @@ typedef struct {
 	char launcher[64];/* the .dol at the root of the SD card that Exit starts ("" = find one) */
 	char key[UI_BRAINS][UI_KEY_MAX];  /* the API key for each AI ("" = none yet) */
 	char model[UI_BRAINS][80];        /* the model for each AI ("" = the usual one) */
-	int depth_flip;   /* (a fix-up, set by hand in pixel.ini if he ever looks inside out) */
-	int glow;         /* 1 = the glow round bright things (display.glow=0 in pixel.ini turns it off) */
-	int fps;          /* 1 = frames a second shown in the corner (display.fps=1 in pixel.ini) */
-	int intro;        /* 1 = the opening (him switching on) when BrainBox starts (display.intro=0 in pixel.ini: off) */
+	int depth_flip;   /* (a fix-up, set by hand in brainbox.ini if he ever looks inside out) */
+	int glow;         /* 1 = the glow round bright things (display.glow=0 in brainbox.ini turns it off) */
+	int fps;          /* 1 = frames a second shown in the corner (display.fps=1 in brainbox.ini) */
+	int intro;        /* 1 = the opening (him switching on) when BrainBox starts (display.intro=0 in brainbox.ini: off) */
 } UiSettings;
 
 extern UiSettings ui_set;
@@ -88,10 +88,13 @@ void ui_toast(const char *msg);   /* a message across the top that fades after a
 void ui_intro_start(void);
 void ui_intro_skip(void);
 bool ui_intro_done(void);
+/* (a little secret: him beaming away and back, with sound_play_shimmer) */
+void ui_beam_away(void);
+bool ui_beam_done(void);
 
 /* panels over the stage */
 enum { UI_OVERLAY_NONE, UI_OVERLAY_LIST, UI_OVERLAY_BRAIN, UI_OVERLAY_SIGNIN };
-#define UI_OVERLAY_ROWS 10
+#define UI_OVERLAY_ROWS 12
 void ui_overlay(int overlay, const char *title);
 /* a row: the label, and its value (a choice, with arrows), or for the
  * BRAIN panel a line under the name; value NULL: a plain choice. A value

@@ -248,7 +248,7 @@ static bool time_from_web(const char *host) {
     int fd = netio_connect(ip, 80);
     if (fd < 0) return false;
     char req[160];
-    int n = snprintf(req, sizeof(req), "HEAD / HTTP/1.0\r\nHost: %s\r\nUser-Agent: ProfessorScotty\r\n\r\n", host);
+    int n = snprintf(req, sizeof(req), "HEAD / HTTP/1.0\r\nHost: %s\r\nUser-Agent: BrainBox\r\n\r\n", host);
     bool ok = false;
     if (netio_wait(fd, true, 4000) == 1 && net_send(fd, req, n, 0) == n) {
         char buf[2048];

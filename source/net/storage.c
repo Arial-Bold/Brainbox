@@ -11,7 +11,7 @@
 #include <unistd.h>
 
 static bool mounted;
-static char app_dir[256] = "sd:/apps/pixel";
+static char app_dir[256] = "sd:/apps/brainbox";
 static char program[300];
 
 bool storage_is_dir(const char *p) { struct stat st; return stat(p, &st) == 0 && S_ISDIR(st.st_mode); }
@@ -28,7 +28,7 @@ bool storage_init(void) {
     return mounted;
 }
 
-/* argv[0] from the loader: "sd:/apps/pixel/default.dol", or another device
+/* argv[0] from the loader: "sd:/apps/brainbox/default.dol", or another device
  * name for the same card ("sdb:/...", "fat:/..."): the part after ":/" is
  * what's kept */
 void storage_set_program(const char *argv0) {

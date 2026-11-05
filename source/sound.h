@@ -13,3 +13,4 @@ void sound_shutdown(void);   /* before launching another program */
 /* the hologram switching on (the opening, see holosynth.c) */
 bool sound_holo_ready(void);
 void sound_play_holo(void);
+void sound_play_shimmer(void);   /* (a little secret) */

@@ -60,10 +60,26 @@ static void synth_holo(void) {
 	holo_buf = buf;
 }
 
+static s16 *shim_buf;
+static u32 shim_bytes;
+static void synth_shimmer(void) {
+	int n = shimmer_length();
+	u32 bytes = ((u32)n * 2 + 31) & ~31u;
+	s16 *buf = memalign(32, bytes);
+	if (!buf) return;
+	memset(buf, 0, bytes);
+	if (!shimmer_render(buf, n)) { free(buf); return; }
+	DCFlushRange(buf, bytes);
+	shim_bytes = bytes;
+	__sync_synchronize();
+	shim_buf = buf;
+}
+
 static void *synth_main(void *arg) {
 	(void)arg;
 	synth_holo();
 	for (unsigned k = 0; k < sizeof(synth_order) / sizeof(synth_order[0]) && !synth_quit; k++) synth(synth_order[k]);
+	if (!synth_quit) synth_shimmer();
 	return NULL;
 }
 
@@ -141,4 +157,11 @@ void sound_play_holo(void) {
 	u16 vol = (u16)(ui_set.voice_volume * 255 / UI_VOLUME_MAX);   /* (as loud as his voice) */
 	AESND_SetVoiceVolume(holo_voice, vol, vol);
 	AESND_PlayVoice(holo_voice, VOICE_MONO16, holo_buf, holo_bytes, HOLO_RATE, 0, false);
+}
+
+void sound_play_shimmer(void) {
+	if (!ready || !shim_buf || !holo_voice || ui_set.voice_volume <= 0) return;
+	u16 vol = (u16)(ui_set.voice_volume * 255 / UI_VOLUME_MAX);
+	AESND_SetVoiceVolume(holo_voice, vol, vol);
+	AESND_PlayVoice(holo_voice, VOICE_MONO16, shim_buf, shim_bytes, HOLO_RATE, 0, false);
 }

@@ -278,7 +278,7 @@ static void add_wav(Buf *b, bool base64) {
 static bool transcribe(void) {
     char url[300], headers[500], err[200] = "";
     const char *path;
-    static const char *BOUNDARY = "PixelSaid7d1f0c3a";
+    static const char *BOUNDARY = "BrainBoxSaid7d1f0c3a";
     const char *try_models[5];
     int nm = 0;
     if (ear == AI_GEMINI) {

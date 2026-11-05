@@ -6,7 +6,7 @@
 * overscan, so the screens themselves never need to know about either.
 *
 * The stage: a deep indigo room with a grid floor, a glowing pedestal and a
-* beam of light, and the professor floating in it (pixel3d.c), with his
+* beam of light, and the professor floating in it (head3d.c), with his
 * reflection on the floor, hologram scanlines, sparkles and a glow: the bright
 * parts of each frame are copied out at half size and added back, softened.
 * The panels, rows, hints and description bar are the System look of the
@@ -23,7 +23,7 @@
 #include <sys/stat.h>
 #include "ui.h"
 #include "ui_assets.h"
-#include "pixel3d.h"
+#include "head3d.h"
 #include "holosynth.h"
 #include "speech.h"
 #include "net/storage.h"
@@ -124,6 +124,7 @@ static struct {
 	float listen;      /* the microphone's loudness, 0..1 */
 	int intro;         /* the opening: 0 none (or over), 1 waiting to start (nothing shown yet), 2 playing */
 	u32 intro_at;
+	u32 beam_at;       /* (a little secret: him beaming away and back; 0 = not) */
 	float listen_shown;
 	char typing[400];
 	bool masked;
@@ -165,6 +166,8 @@ void ui_caption(int kind, const char *t) { L(); sc.cap_kind = kind; cpy(sc.cap, 
 void ui_listen_level(float lv) { sc.listen = lv; }
 void ui_intro_start(void) { L(); sc.intro_at = now_ms(); sc.intro = 2; U(); }
 void ui_intro_skip(void) { L(); sc.intro = 0; U(); }
+void ui_beam_away(void) { L(); u32 n = now_ms(); sc.beam_at = n ? n : 1; U(); }
+bool ui_beam_done(void) { return !sc.beam_at || now_ms() - sc.beam_at > (u32)(SHIMMER_S * 1000) + 100; }
 bool ui_intro_done(void) { return sc.intro == 0 || (sc.intro == 2 && now_ms() - sc.intro_at > 1500); }
 void ui_typing(const char *t, bool masked) { L(); cpy(sc.typing, t, sizeof(sc.typing)); sc.masked = masked; U(); }
 void ui_chat(const char *you, const char *him) { L(); cpy(sc.you, you, sizeof(sc.you)); cpy(sc.him, him, sizeof(sc.him)); sc.him_scroll = 0; U(); }
@@ -845,7 +848,7 @@ static void bloom(void) {
 
 /* ---------------------------------------------------- the professor's pose */
 
-static PixelPose pose;
+static HeadPose pose;
 static float mouth, px_now = 320, think_now, brows_now, fog_now;
 static u32 blink_at, last_ms;
 
@@ -886,11 +889,11 @@ static void pose_update(float t) {
 }
 
 static void frame_setup(void);
-static void head_pass(float x, float alpha_k, float mirror, PixelBox *box) {
-	/* 3D, on the GPU (see pixel3d.c), then back to drawing in 2D */
+static void head_pass(float x, float alpha_k, float mirror, HeadBox *box) {
+	/* 3D, on the GPU (see head3d.c), then back to drawing in 2D */
 	if (alpha_k <= 0) { if (box) box->x0 = box->x1 = box->y0 = box->y1 = 0; return; }
-	pixel3d_view(vl, vt, vr, vb, ui_set.depth_flip);
-	pixel3d_draw(x, 240, 1, alpha_k, mirror, box);
+	head3d_view(vl, vt, vr, vb, ui_set.depth_flip);
+	head3d_draw(x, 240, 1, alpha_k, mirror, box);
 	frame_setup();
 }
 
@@ -942,9 +945,25 @@ static void scanlines(float cx, float top, float t) {
  * bright line sweeps up from his bow tie to the top of his head, leaving him
  * behind it; on the first chime he's there, with a glow and a burst of
  * sparkles. */
-typedef struct { float beam, head, ghost, sweep, glow, sparkle, jitter; bool sweeping; } Intro;
+typedef struct { float beam, head, ghost, sweep, glow, sparkle, jitter, motes; bool sweeping, shimmer; } Intro;
 static Intro intro_now(void) {
-	Intro in = { 1, 1, 0, 0, 0, 1, 0, false };
+	Intro in = { 1, 1, 0, 0, 0, 1, 0, 0, false, false };
+	if (sc.beam_at) {
+		/* beaming away and back, to its shimmer (holosynth.c): he fades into a
+		 * glowing, sparkling outline and goes; a moment later he comes back the same way */
+		float tb = (float)(s32)(now_ms() - sc.beam_at) / 1000.0f;
+		if (tb < 0) tb = 0;
+		if (tb >= SHIMMER_S) { sc.beam_at = 0; return in; }
+		in.shimmer = true;
+		float p = 0;
+		if (tb < 1.25f) { p = tb / 1.25f; in.head = 1 - p * p * (3 - 2 * p); }
+		else if (tb < 1.85f) { in.head = 0; }
+		else { p = (tb - 1.85f) / 1.25f; in.head = p * p * (3 - 2 * p); }
+		in.ghost = tb < 1.25f || tb > 1.85f ? 0.85f * sinf(3.1415927f * p) : 0;
+		in.motes = tb < 1.25f || tb > 1.85f ? sinf(3.1415927f * p) : 0.15f;
+		in.sparkle = 1;
+		return in;
+	}
 	if (sc.intro == 1) { in.beam = in.head = in.sparkle = 0; return in; }
 	if (sc.intro != 2) return in;
 	float ti = (now_ms() - sc.intro_at) / 1000.0f;
@@ -980,9 +999,9 @@ static void stage(void) {
 	Intro in = intro_now();
 	float cx = px_now;
 	room(cx);
-	pixel3d_build(&pose);
+	head3d_build(&pose);
 	/* where his head is, top to bottom (for the sweep), from the last frame */
-	static PixelBox last_box = { 200, 95, 440, 345 };
+	static HeadBox last_box = { 200, 95, 440, 345 };
 	float head_top = last_box.y0 - 6, head_bot = last_box.y1 + 6;
 	float sweep_y = head_bot + (head_top - head_bot) * (in.sweep * in.sweep * (3 - 2 * in.sweep));
 	float jx = in.jitter > 0 ? (float)((int)(now_ms() / 33 * 7919 % 13) - 6) : 0;   /* (a jump every frame or two) */
@@ -994,16 +1013,25 @@ static void stage(void) {
 		GX_SetScissor(0, 0, rmode->fbWidth, rmode->efbHeight);
 	}
 	beam(cx, 60, in.beam);
-	PixelBox box = { 0, 0, 0, 0 };
-	if (in.sweeping) {
+	HeadBox box = { 0, 0, 0, 0 };
+	if (in.shimmer) {
+		/* beaming: him fading, with a glowing outline over him */
+		head_pass(cx, in.head, -1000, &box);
+		if (in.ghost > 0.01f) {
+			GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_ONE, GX_LO_CLEAR);
+			head3d_tint(150, 210, 255);
+			head_pass(cx, in.ghost, -1000, NULL);
+			head3d_tint(255, 255, 255);
+		}
+	} else if (in.sweeping) {
 		/* below the line: him; above it: only his faint outline */
 		clip_rows(sweep_y, 99999);
 		head_pass(cx, 1, -1000, &box);
 		clip_rows(-99999, sweep_y);
 		GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_ONE, GX_LO_CLEAR);   /* (light added: a glowing outline) */
-		pixel3d_tint(110, 190, 255);
+		head3d_tint(110, 190, 255);
 		head_pass(cx, in.ghost, -1000, NULL);
-		pixel3d_tint(255, 255, 255);
+		head3d_tint(255, 255, 255);
 		GX_SetScissor(0, 0, rmode->fbWidth, rmode->efbHeight);
 	} else if (in.head > 0) {
 		head_pass(cx, in.head, -1000, &box);
@@ -1014,9 +1042,9 @@ static void stage(void) {
 			float sx = (float)((int)((now_ms() / 33 + k * 5) * 104729 % 11) - 5) * in.jitter;
 			clip_rows(y0, y1);
 			GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_ONE, GX_LO_CLEAR);   /* (light added: a glowing flicker) */
-			pixel3d_tint(110, 190, 255);
+			head3d_tint(110, 190, 255);
 			head_pass(cx + sx, in.ghost, -1000, NULL);
-			pixel3d_tint(255, 255, 255);
+			head3d_tint(255, 255, 255);
 		}
 		GX_SetScissor(0, 0, rmode->fbWidth, rmode->efbHeight);
 	}
@@ -1042,6 +1070,21 @@ static void stage(void) {
 		GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
 	}
 	sparkles(cx, t, in.sparkle);
+	if (in.motes > 0) {
+		/* a column of twinkling motes over him as he goes and comes */
+		mode_color();
+		GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_ONE, GX_LO_CLEAR);
+		unsigned seed = (now_ms() / 50) * 2654435761u;
+		float x0 = last_box.x0 + 10, x1 = last_box.x1 - 10;
+		for (int i = 0; i < 70; i++) {
+			seed = seed * 1103515245u + 12345u; float r1 = ((seed >> 8) & 0xFFFF) / 65535.0f;
+			seed = seed * 1103515245u + 12345u; float r2 = ((seed >> 8) & 0xFFFF) / 65535.0f;
+			seed = seed * 1103515245u + 12345u; float r3 = ((seed >> 8) & 0xFFFF) / 65535.0f;
+			float x = x0 + (x1 - x0) * r1, y = head_top + (head_bot - head_top) * r2;
+			soft_blob(x, y, 2.2f + 2.5f * r3, 2.2f + 2.5f * r3, rgba(200, 235, 255, (u8)(230 * in.motes * r3)));
+		}
+		GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
+	}
 	bloom();
 	/* fog round his head (the foggy-headed greeting) */
 	if (fog_now > 0.01f) {

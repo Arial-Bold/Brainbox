@@ -33,7 +33,7 @@ void entropy_init(void) {
     LWP_MutexInit(&lock, false);
     ready = true;
     LWP_MutexLock(lock);
-    fold("professor-pixel-entropy", 23);
+    fold("brainbox-entropy-pool", 21);
     size_t len = 0;
     char path[400];
     storage_path(path, sizeof(path), "seed.bin");

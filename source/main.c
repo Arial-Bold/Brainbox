@@ -6,6 +6,7 @@
  * keyboard, and tells the drawing thread (ui.c) what to show. */
 #include <gccore.h>
 #include <ogc/lwp_watchdog.h>
+#include <ctype.h>
 #include <dirent.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -22,6 +23,7 @@
 #include "dolload.h"
 #include "net/storage.h"
 #include "net/qrcodegen.h"
+#include "net/update.h"
 
 const char appversion[] = "v1.0";
 
@@ -47,6 +49,15 @@ static void read_input(void) {
 	if (held & dirs) {
 		if (down & dirs) repeat = 0;
 		else if (++repeat >= 18 && (repeat - 18) % 5 == 0) down |= held & dirs;
+	}
+	update_poll();
+	/* the automatic check at start-up found a new version: say so, once */
+	static bool told;
+	if (!told && update_was_quiet() && update_state() == UPD_AVAILABLE) {
+		told = true;
+		char m[96];
+		snprintf(m, sizeof(m), "BrainBox %s is ready to install: Settings > Updates", update_latest_version());
+		ui_toast(m);
 	}
 	if (down & PAD_BUTTON_B) sound_play(SFX_BACK);
 	else if (down & (PAD_BUTTON_A | PAD_BUTTON_X | PAD_BUTTON_Y | PAD_BUTTON_START)) sound_play(SFX_SELECT);
@@ -127,6 +138,13 @@ static void exit_to_launcher(void) {
 	}
 	dol_before_jump();
 	SYS_ResetSystem(SYS_HOTRESET, 0, 0);
+}
+
+/* for the updater: starts the newly installed BrainBox */
+bool brainbox_launch_dol(const char *path) {
+	char err[160];
+	dol_launch(path, err, sizeof(err));   /* (only comes back if it couldn't) */
+	return false;
 }
 
 /* ------------------------------------------------------- what he says */
@@ -301,7 +319,29 @@ static bool choose_brain(void) {
 
 /* ----------------------------------------------------------- Settings */
 
-enum { S_RES, S_SCREEN, S_WIDTH, S_OVERSCAN, S_VOICE, S_SOUNDS, S_CAPTIONS, S_BRAIN, S_LAUNCHER, S_EXIT, S_ROWS };
+enum { S_RES, S_SCREEN, S_WIDTH, S_OVERSCAN, S_VOICE, S_SOUNDS, S_CAPTIONS, S_BRAIN, S_UPDATES, S_LAUNCHER, S_EXIT, S_ROWS };
+
+/* the Updates row: how it's going */
+static const char *updates_value(void) {
+	static char v[64];
+	switch (update_state()) {
+	case UPD_CHECKING: snprintf(v, sizeof(v), "\x02" "Checking\x85"); break;
+	case UPD_LATEST: snprintf(v, sizeof(v), "\x02" "Up to date (%s)", appversion); break;
+	case UPD_AVAILABLE: snprintf(v, sizeof(v), "\x02" "Version %s: A to install", update_latest_version()); break;
+	case UPD_CHECK_FAILED: snprintf(v, sizeof(v), "\x02" "Couldn't check: A to try again"); break;
+	case UPD_INSTALLING: {
+		static const char *steps[] = { "Connecting", "Downloading", "Unpacking", "Installing" };
+		float p = update_progress();
+		if (p >= 0) snprintf(v, sizeof(v), "\x02%s %d%%", steps[update_step()], (int)(p * 100));
+		else snprintf(v, sizeof(v), "\x02%s\x85", steps[update_step()]);
+		break;
+	}
+	case UPD_INSTALLED: snprintf(v, sizeof(v), "\x02" "Installed: A to restart"); break;
+	case UPD_FAILED: snprintf(v, sizeof(v), "\x02" "Didn't install: A to try again"); break;
+	default: snprintf(v, sizeof(v), "\x02%s: A to check", appversion); break;
+	}
+	return v;
+}
 
 static void settings_rows(void) {
 	char ov[16], vv[16], sv[16], lau[72], br[64];
@@ -319,6 +359,7 @@ static void settings_rows(void) {
 	ui_overlay_row(S_SOUNDS, "Menu sounds", sv);
 	ui_overlay_row(S_CAPTIONS, "Captions", ui_set.captions ? "On" : "Off");
 	ui_overlay_row(S_BRAIN, "Brain", br);
+	ui_overlay_row(S_UPDATES, "Updates", updates_value());
 	ui_overlay_row(S_LAUNCHER, "Launcher", lau);
 	ui_overlay_row(S_EXIT, "Exit to Launcher", NULL);
 	ui_overlay_rows(S_ROWS);
@@ -334,10 +375,13 @@ static void settings_help(int row) {
 		{ "Menu sounds", "How loud the sounds are when you move and choose. Off for none." },
 		{ "Captions", "Shows his answers in a bubble as he speaks." },
 		{ "Brain", "Which AI he uses: Groq, Google Gemini, Claude or ChatGPT. A to change or sign in." },
+		{ "Updates", "Checks GitHub for a newer BrainBox and installs it. Your settings and keys are kept." },
 		{ "Launcher", "The program at the root of the SD card that Exit to Launcher starts." },
 		{ "Exit to Launcher", "Leaves BrainBox." },
 	};
 	ui_status(help[row][0], help[row][1]);
+	if (row == S_UPDATES && (update_state() == UPD_FAILED || update_state() == UPD_CHECK_FAILED) && update_error()[0])
+		ui_status("Updates", update_error());
 	if (row >= S_BRAIN && row != S_LAUNCHER) hints(3, "S:Move", "A:Select", "B:Back");
 	else hints(3, "S:Move", "A:Change", "B:Back");
 }
@@ -353,8 +397,20 @@ static void settings(void) {
 	ui_overlay_select(row);
 	settings_help(row);
 	wait_release();
+	UpdateState upd_was = update_state();
+	int upd_pct = -1;
 	for (;;) {
 		read_input();
+		/* the Updates row follows how it's going */
+		{
+			int pct = update_progress() >= 0 ? (int)(update_progress() * 100) : -1;
+			if (update_state() != upd_was || pct != upd_pct) {
+				upd_was = update_state();
+				upd_pct = pct;
+				settings_rows();
+				if (row == S_UPDATES) settings_help(row);
+			}
+		}
 		if (confirm_old >= 0) {
 			u64 now = ticks_to_millisecs(gettime());
 			if (down & PAD_BUTTON_A) { confirm_old = -1; settings_help(row); wait_release(); continue; }
@@ -381,6 +437,19 @@ static void settings(void) {
 			if (row == S_EXIT) {
 				if (memcmp(&before, &ui_set, sizeof(ui_set))) save_settings();
 				exit_to_launcher();
+				continue;
+			}
+			if (row == S_UPDATES) {
+				UpdateState st = update_state();
+				if (st == UPD_AVAILABLE) update_request_install();
+				else if (st == UPD_INSTALLED) {
+					if (memcmp(&before, &ui_set, sizeof(ui_set))) save_settings();
+					char err[160];
+					if (!update_restart(err, sizeof(err))) ui_toast(err);
+				} else if (st != UPD_CHECKING && st != UPD_INSTALLING) update_request_check(false);
+				settings_rows();
+				settings_help(row);
+				wait_release();
 				continue;
 			}
 			if (row == S_BRAIN) {
@@ -472,6 +541,46 @@ static void idle_hints(void) {
 	(void)more;   /* (the arrows beside his answer show there's more: no hint needed) */
 }
 
+/* ---------------------------------------------------- a little secret
+ * He's a Scotty, after all: ask him to beam you up and he'll oblige
+ * (well, himself), and ask for more power and he'll tell you how much
+ * she's got. Matched on the words alone (any case, any punctuation). */
+static bool says(const char *q, const char *words) {
+	char t[400];
+	size_t n = 0;
+	bool space = true;
+	for (const char *p = q; *p && n < sizeof(t) - 2; p++) {
+		char c = (char)tolower((unsigned char)*p);
+		if (c == '\'') continue;
+		if (isalpha((unsigned char)c)) { t[n++] = c; space = false; }
+		else if (!space) { t[n++] = ' '; space = true; }
+	}
+	t[n] = 0;
+	return strstr(t, words) != NULL;
+}
+
+static bool easter_egg(const char *q) {
+	if (says(q, "beam me up")) {
+		ui_layout(1);
+		say(q, "Aye! Hold still now, this tickles a wee bit. Energizing!");
+		ui_chuckle();
+		while (speech_busy()) read_input();
+		ui_chat(q, "");
+		sound_play_shimmer();
+		ui_beam_away();
+		while (!ui_beam_done()) read_input();
+		say(q, "There we are, all in one piece! Well, mostly. Now, where were we?");
+		ui_chuckle();
+		return true;
+	}
+	if (says(q, "more power") || says(q, "all shes got") || says(q, "warp speed")) {
+		say(q, "I'm givin' her all she's got! Och, she cannae take much more!");
+		ui_chuckle();
+		return true;
+	}
+	return false;
+}
+
 /* what he says once the AI has answered q */
 static void answered(const char *q) {
 	if (ai_state() == AI_DONE) {
@@ -492,6 +601,7 @@ static void answered(const char *q) {
 /* asks the question and has him answer it */
 static void ask(const char *q) {
 	asked_once = true;
+	if (easter_egg(q)) return;
 	ui_layout(1);
 	ui_chat(q, "");
 	ui_caption(UI_CAP_THINK, "Hmm, let me think about that\x85");
@@ -591,11 +701,12 @@ static void listen_and_ask(void) {
 	use_brain();
 	ai_hear(pcm, n, LISTEN_RATE, ear, ui_set.key[ear], ui_set.model[ear]);
 	save_recording(pcm, n);   /* (while it's on its way) */
-	bool cancelled = false, shown = false;
+	bool cancelled = false, shown = false, egg = false;
 	while (ai_state() == AI_BUSY) {
 		read_input();
 		if (!shown && ai_heard()) {
 			shown = true;
+			if (says(ai_heard(), "beam me up") || says(ai_heard(), "more power") || says(ai_heard(), "all shes got") || says(ai_heard(), "warp speed")) { egg = true; break; }
 			ui_chat(ai_heard(), "");
 			ui_caption(UI_CAP_THINK, "Hmm, let me think about that\x85");
 			ui_pose(1, 0, true);
@@ -607,6 +718,7 @@ static void listen_and_ask(void) {
 	const char *q = ai_heard() ? ai_heard() : "";
 	static char heard[1200];
 	snprintf(heard, sizeof(heard), "%s", q);
+	if (egg) { ui_pose(0, 0.6f, true); ui_caption(UI_CAP_NONE, ""); easter_egg(heard); return; }   /* (his answer to it, still coming, is dropped) */
 	if (cancelled) { say(heard, "Oh, never mind then! Ask me anything else."); return; }
 	if (ai_heard_nothing()) { say("", "Hmm? I didn't quite catch that. Hold A, speak up a little, and let go when you're done!"); return; }
 	answered(heard);
@@ -705,10 +817,20 @@ int main(int argc, char **argv) {
 	storage_set_program(argc > 0 && argv ? argv[0] : NULL);
 	if (storage_init()) {
 		char path[300];
-		storage_path(path, sizeof(path), "pixel.ini");
+		storage_path(path, sizeof(path), "brainbox.ini");
+		/* (from before it was BrainBox: the settings of the old name, here or in apps/pixel, carried over) */
+		if (!storage_is_file(path)) {
+			char old[300];
+			storage_path(old, sizeof(old), "pixel.ini");
+			if (!storage_is_file(old)) snprintf(old, sizeof(old), "%sapps/pixel/pixel.ini", storage_root());
+			size_t len = 0;
+			char *data = storage_is_file(old) ? storage_read(old, &len) : NULL;
+			if (data) { storage_write_atomic(path, data, len); free(data); }
+		}
 		ui_settings_path(path);
 		ui_settings_load();
 	}
+	if (storage_ok()) update_remove_old();   /* (the version an update replaced, now this one has started) */
 	use_brain();
 	ai_warm_up();   /* the network and the clock, while he switches on */
 	ui_layout(0);
@@ -722,6 +844,7 @@ int main(int argc, char **argv) {
 		sound_play_holo();
 		while (!ui_intro_done()) read_input();
 	} else ui_intro_skip();
+	update_request_check(true);   /* (quietly: it says so only if there's a new version) */
 	/* his voice starts in the background too (a second or so: usually ready by now) */
 	if (!speech_ready()) {
 		ui_caption(UI_CAP_INFO, "Warming up\x85");

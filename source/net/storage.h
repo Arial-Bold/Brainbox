@@ -1,5 +1,5 @@
 /* storage.h - the SD card, and where Professor Scotty keeps his own files:
- * the folder his .dol was started from, or apps/pixel. */
+ * the folder his .dol was started from, or apps/brainbox. */
 #pragma once
 #include <stdbool.h>
 #include <stddef.h>
@@ -8,7 +8,7 @@ bool  storage_init(void);                        /* mounts the SD card (SD2SP2, 
 void  storage_set_program(const char *argv0);   /* the .dol we were started from, if the loader said */
 bool  storage_ok(void);                          /* there's an SD card */
 const char *storage_root(void);                  /* "sd:/" */
-const char *storage_app_dir(void);               /* e.g. "sd:/apps/pixel" */
+const char *storage_app_dir(void);               /* e.g. "sd:/apps/brainbox" */
 const char *storage_program_file(void);          /* the running .dol, or NULL if not known */
 void  storage_path(char *out, size_t cap, const char *name);   /* a file in the app's folder */
 char *storage_read(const char *path, size_t *len);             /* malloc'd, NUL-terminated; NULL if missing */

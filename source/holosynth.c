@@ -76,3 +76,71 @@ bool holo_render(int16_t *out, int n) {
     free(y);
     return true;
 }
+
+/* ------------------------------------------------------- the beaming */
+
+/* A shimmer for beaming away and back: a cloud of high, glassy notes that
+ * swells and sparkles (twice: going, and coming back), over a soft rising
+ * and falling hum. (Its own sound, made here.) */
+#define SHIM_S 3.1f
+int shimmer_length(void) { return (int)(SHIM_S * HOLO_RATE); }
+
+bool shimmer_render(int16_t *out, int n) {
+    float *y = malloc(sizeof(float) * n);
+    if (!y) return false;
+    const float SR = HOLO_RATE;
+    enum { NP = 14 };
+    float fq[NP], ph[NP], rate[NP], off[NP];
+    unsigned seed = 12345;
+    for (int k = 0; k < NP; k++) {
+        seed = seed * 1103515245u + 12345u; float r1 = ((seed >> 8) & 0xFFFF) / 65535.0f;
+        seed = seed * 1103515245u + 12345u; float r2 = ((seed >> 8) & 0xFFFF) / 65535.0f;
+        fq[k] = 1400 + 2600 * r1;            /* glassy highs */
+        rate[k] = 7 + 11 * r2;               /* each twinkles at its own speed */
+        off[k] = r1 * 6.28f;
+        ph[k] = 0;
+    }
+    float hum_ph = 0;
+    for (int i = 0; i < n; i++) {
+        float t = i / SR;
+        /* two swells: going (0..1.25 s) and coming back (1.85..3.1 s) */
+        float a = 0;
+        if (t < 1.25f) a = sinf(PI * t / 1.25f);
+        else if (t > 1.85f) a = sinf(PI * (t - 1.85f) / 1.25f);
+        float v = 0;
+        for (int k = 0; k < NP; k++) {
+            ph[k] += 2 * PI * fq[k] * (1 + 0.04f * a) / SR;
+            if (ph[k] > 2 * PI) ph[k] -= 2 * PI;
+            float tw = 0.5f + 0.5f * sinf(2 * PI * rate[k] * t + off[k]);
+            v += sinf(ph[k]) * tw * tw;
+        }
+        v *= a * a / NP;
+        /* the hum, rising as it goes and falling as it comes back */
+        float hf = t < 1.55f ? 180 + 260 * (t / 1.55f) : 440 - 260 * ((t - 1.55f) / 1.55f);
+        hum_ph += 2 * PI * hf / SR;
+        if (hum_ph > 2 * PI) hum_ph -= 2 * PI;
+        v += (sinf(hum_ph) + 0.3f * sinf(2 * hum_ph)) * a * 0.18f;
+        y[i] = v;
+    }
+    /* a touch of the little room, as the opening has */
+    float *x = malloc(sizeof(float) * n);
+    if (x) {
+        memcpy(x, y, sizeof(float) * n);
+        static const float comb[4][2] = { { 0.031f, 0.45f }, { 0.043f, 0.4f }, { 0.057f, 0.35f }, { 0.071f, 0.3f } };
+        for (int c = 0; c < 4; c++) {
+            int d = (int)(comb[c][0] * SR);
+            float g = 1;
+            for (int k = 1; k < 10 && d * k < n; k++) {
+                g *= comb[c][1];
+                for (int i = d * k; i < n; i++) y[i] += x[i - d * k] * g * 0.12f;
+            }
+        }
+        free(x);
+    }
+    float peak = 1e-6f;
+    for (int i = 0; i < n; i++) if (fabsf(y[i]) > peak) peak = fabsf(y[i]);
+    float k = 0.7f * 32767 / peak;
+    for (int i = 0; i < n; i++) out[i] = (int16_t)lrintf(y[i] * k);
+    free(y);
+    return true;
+}
