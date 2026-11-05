@@ -29,7 +29,6 @@ const char appversion[] = "v1.0";
 
 /* ---------------------------------------------------------------- input */
 
-static void boot_note(const char *fmt, ...);
 static u32 held, down, held_prev;
 static bool dir_sounds = true;   /* the move sounds (not while scrolling his answer) */
 static int repeat;
@@ -52,7 +51,6 @@ static void read_input(void) {
 		else if (++repeat >= 18 && (repeat - 18) % 5 == 0) down |= held & dirs;
 	}
 	update_poll();
-	{ static int frames_in; if (++frames_in == 600) boot_note("ten seconds in"); }
 	/* the automatic check at start-up found a new version: say so, once */
 	static bool told;
 	if (!told && update_was_quiet() && update_state() == UPD_AVAILABLE) {
@@ -147,26 +145,6 @@ bool brainbox_launch_dol(const char *path) {
 	char err[160];
 	dol_launch(path, err, sizeof(err));   /* (only comes back if it couldn't) */
 	return false;
-}
-
-/* ----------------------------------------------- start-up checks
- * While a black screen at start-up is being looked into: what happened, in
- * boot.txt beside the app (rewritten as it goes). */
-static char bootlog[2048];
-static void boot_note(const char *fmt, ...) {
-	char line[200];
-	va_list ap;
-	va_start(ap, fmt);
-	vsnprintf(line, sizeof(line), fmt, ap);
-	va_end(ap);
-	size_t n = strlen(bootlog);
-	snprintf(bootlog + n, sizeof(bootlog) - n, "%.1fs  %s  (frames drawn %d, drawing at step %d, opening %d)\n",
-	         ticks_to_millisecs(gettime()) / 1000.0, line, ui_debug_frames(), ui_debug_mark(), ui_debug_intro());
-	if (storage_ok()) {
-		char path[300];
-		storage_path(path, sizeof(path), "boot.txt");
-		storage_write_atomic(path, bootlog, strlen(bootlog));
-	}
 }
 
 /* ------------------------------------------------------- what he says */
@@ -852,13 +830,6 @@ int main(int argc, char **argv) {
 		ui_settings_path(path);
 		ui_settings_load();
 	}
-	boot_note("started from %s, folder %s, SD card %s", argc > 0 && argv && argv[0] ? argv[0] : "(not said)", storage_app_dir(), storage_ok() ? "yes" : "no");
-	{
-		char p[300];
-		storage_path(p, sizeof(p), "brainbox.ini");
-		boot_note("settings %s: %s; brain %s, key %s", p, storage_is_file(p) ? "found" : "not found",
-		          ai_id((AiBrain)ui_set.brain), ui_set.key[ui_set.brain][0] ? "yes" : "none");
-	}
 	if (storage_ok()) update_remove_old();   /* (the version an update replaced, now this one has started) */
 	use_brain();
 	ai_warm_up();   /* the network and the clock, while he switches on */
@@ -870,16 +841,12 @@ int main(int argc, char **argv) {
 	/* (holding Z as it starts skips it) */
 	PAD_ScanPads();
 	bool skip = (PAD_ButtonsHeld(0) & PAD_TRIGGER_Z) != 0;
-	boot_note("before the opening (it's %s%s)", ui_set.intro ? "on" : "off", skip ? ", skipped with Z" : "");
 	if (ui_set.intro && !skip) {
 		for (int k = 0; k < 240 && !sound_holo_ready(); k++) read_input();
-		boot_note("opening sound %s", sound_holo_ready() ? "ready" : "not ready (4 s)");
 		ui_intro_start();
 		sound_play_holo();
 		while (!ui_intro_done()) read_input();
 	} else ui_intro_skip();
-	for (int k = 0; k < 30; k++) read_input();
-	boot_note("after the opening");
 	update_request_check(true);   /* (quietly: it says so only if there's a new version) */
 	/* his voice starts in the background too (a second or so: usually ready by now) */
 	if (!speech_ready()) {
@@ -889,7 +856,6 @@ int main(int argc, char **argv) {
 	}
 	if (!storage_ok()) ui_toast("There's no SD card: settings won't be kept.");
 
-	boot_note("greeting");
 	if (!ui_set.key[ui_set.brain][0]) {
 		/* no brain yet: his head's a little foggy */
 		ui_fog(1);

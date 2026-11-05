@@ -142,8 +142,6 @@ static struct {
 } sc;
 
 static mutex_t lock = LWP_MUTEX_NULL;
-/* how the drawing is going (for boot.txt while the start-up is being looked into) */
-static volatile int ui_frames, ui_mark;
 static void L(void) { LWP_MutexLock(lock); }
 static void U(void) { LWP_MutexUnlock(lock); }
 static void cpy(char *dst, const char *src, size_t n) { snprintf(dst, n, "%s", src ? src : ""); }
@@ -1000,11 +998,11 @@ static void stage(void) {
 	pose_update(t);
 	Intro in = intro_now();
 	float cx = px_now;
-	ui_mark = 2;
 	room(cx);
-	ui_mark = 3;
 	head3d_build(&pose);
-	ui_mark = 4;
+	/* (making him the first time sets up the GPU's vertex description for his
+	 * arrays: back to the 2D drawing's, before anything else is drawn) */
+	frame_setup();
 	/* where his head is, top to bottom (for the sweep), from the last frame */
 	static HeadBox last_box = { 200, 95, 440, 345 };
 	float head_top = last_box.y0 - 6, head_bot = last_box.y1 + 6;
@@ -1017,9 +1015,7 @@ static void stage(void) {
 		head_pass(cx + jx, refl, -0.95f, NULL);
 		GX_SetScissor(0, 0, rmode->fbWidth, rmode->efbHeight);
 	}
-	ui_mark = 5;
 	beam(cx, 60, in.beam);
-	ui_mark = 6;
 	HeadBox box = { 0, 0, 0, 0 };
 	if (in.shimmer) {
 		/* beaming: him fading, with a glowing outline over him */
@@ -1055,7 +1051,6 @@ static void stage(void) {
 		}
 		GX_SetScissor(0, 0, rmode->fbWidth, rmode->efbHeight);
 	}
-	ui_mark = 7;
 	if (box.x1 > box.x0) last_box = box;
 	/* hologram scanlines: over him and his props (and his reflection) exactly,
 	 * using the depth he left behind, and over the beam around him */
@@ -1077,7 +1072,6 @@ static void stage(void) {
 		soft_blob(cx, (head_top + head_bot) / 2, (last_box.x1 - last_box.x0) * 0.75f, (head_bot - head_top) * 0.65f, rgba(110, 170, 255, (u8)(110 * k)));
 		GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
 	}
-	ui_mark = 8;
 	sparkles(cx, t, in.sparkle);
 	if (in.motes > 0) {
 		/* a column of twinkling motes over him as he goes and comes */
@@ -1094,9 +1088,7 @@ static void stage(void) {
 		}
 		GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
 	}
-	ui_mark = 9;
 	bloom();
-	ui_mark = 10;
 	/* fog round his head (the foggy-headed greeting) */
 	if (fog_now > 0.01f) {
 		for (int i = 0; i < 14; i++) {
@@ -1412,15 +1404,9 @@ static void draw_frame(void) {
 	U();
 }
 
-/* (how the drawing is going: see ui_mark at the top) */
-int ui_debug_frames(void) { return ui_frames; }
-int ui_debug_mark(void) { return ui_mark; }
-int ui_debug_intro(void) { return sc.intro; }
-
 static void *video_main(void *arg) {
 	(void)arg;
 	while (running) {
-		ui_mark = 1;
 		if (video_change) {
 			video_change = false;
 			GXRModeObj old = mode;
@@ -1435,12 +1421,9 @@ static void *video_main(void *arg) {
 			}
 		}
 		draw_frame();
-		ui_mark = 20;
 		GX_SetZMode(GX_TRUE, GX_ALWAYS, GX_TRUE);   /* so the copy clears depth too */
 		GX_CopyDisp(xfb[fb], GX_TRUE);
 		GX_DrawDone();
-		ui_mark = 21;
-		ui_frames++;
 		VIDEO_SetNextFramebuffer(xfb[fb]);
 		VIDEO_Flush();
 		VIDEO_WaitVSync();

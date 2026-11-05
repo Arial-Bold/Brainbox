@@ -89,9 +89,6 @@ void ui_intro_start(void);
 void ui_intro_skip(void);
 bool ui_intro_done(void);
 /* (a little secret: him beaming away and back, with sound_play_shimmer) */
-int ui_debug_frames(void);   /* (start-up checks: frames drawn, where the drawing is, the opening's state) */
-int ui_debug_mark(void);
-int ui_debug_intro(void);
 void ui_beam_away(void);
 bool ui_beam_done(void);
 
