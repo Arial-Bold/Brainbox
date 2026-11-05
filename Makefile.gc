@@ -129,7 +129,7 @@ FLITE_FILES	:=	third_party/flite/src/audio/au_none.c \
 # SOURCES is a list of directories containing source code
 # INCLUDES is a list of directories containing extra header files
 #---------------------------------------------------------------------------------
-TARGET		:=	pixel_GC
+TARGET		:=	brainbox_GC
 BUILD		:=	build_GC
 SOURCES		:=	source source/net $(MBEDTLS)/library
 DATA		:=
