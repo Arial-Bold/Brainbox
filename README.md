@@ -60,7 +60,7 @@ Groq, Google Gemini and ChatGPT can listen. When Groq is signed in, it always do
 - **Launcher**: which .dol at the root of the SD card Exit to Launcher starts.
 - **Exit to Launcher**: leaves BrainBox.
 
-A few more can be set by hand in `brainbox.ini`: `groq.model`, `gemini.model`, `claude.model` and `openai.model` choose a different model for each service (empty for the usual one), `display.glow=0` turns the glow off, and `display.intro=0` skips the opening (Professor Scotty switching on as a hologram, with its sound).
+A few more can be set by hand in `brainbox.ini`: `groq.model`, `gemini.model`, `claude.model` and `openai.model` choose a different model for each service (empty for the usual one), `display.glow=0` turns the glow off, and `display.intro=0` skips the opening (Professor Scotty switching on as a hologram, with its sound). Holding Z as BrainBox starts skips it just that once.
 
 ## Updates
 
