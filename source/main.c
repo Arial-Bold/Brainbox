@@ -25,7 +25,7 @@
 #include "net/qrcodegen.h"
 #include "net/update.h"
 
-const char appversion[] = "v1.0";
+const char appversion[] = "v1.2";
 
 /* ---------------------------------------------------------------- input */
 
