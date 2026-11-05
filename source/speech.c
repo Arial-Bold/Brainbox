@@ -42,6 +42,19 @@ extern jmp_buf *cst_errjmp;
 static cst_voice *voice;
 static volatile bool ready;
 
+/* Flite's speed-up for this voice: the last few of the fine details of each
+ * sound are left out (0 = all of them, as now). 5 makes him about 1.7 times
+ * quicker to make, for a little less detail in his voice. */
+#define VOICE_SPEEDUP 0
+
+/* Holding back the start: if he's being made slower than he speaks, he'd run
+ * out partway and pause. So the start waits until enough is made that the
+ * rest will keep up (worked out from how quickly the first pieces came), but
+ * never more than a few seconds. */
+#define HOLD_MAX_MS 4000
+static volatile bool holding;
+static volatile u32 hold_at;
+
 /* ------------------------------------------------------------------ ARAM */
 
 #define DSP_CSR (*(volatile u16 *)0xCC00500A)
@@ -114,7 +127,8 @@ static void *player_main(void *arg) {
         while (filled < handed + NCHUNKS - 2) {
             int k = (int)(filled % NCHUNKS);
             u32 have = wpos - rpos;
-            if (have >= CHUNK || (have > 0 && !making)) {
+            if (holding && ticks_to_millisecs(gettime()) - hold_at > HOLD_MAX_MS + 500) holding = false;   /* (just in case) */
+            if (!holding && (have >= CHUNK || (have > 0 && !making))) {
                 u32 n = have >= CHUNK ? CHUNK : ((have + 15) & ~15u);
                 ring_io(false, tmp, rpos, n);
                 if (n < CHUNK) memset(tmp + n, 0, (CHUNK - n) * 2);
@@ -172,6 +186,66 @@ static bool next_sentence(const char **p, char *out, size_t cap, bool first) {
     return true;
 }
 
+/* Writing him into the ring as he's made. Flite hands over each little bit
+ * of a sentence as soon as it's made (its "streaming"), so he starts saying a
+ * sentence while the end of it is still being made, rather than going quiet
+ * until all of it is ready: that was the pause partway through a sentence. */
+static u32 cur_gen;                         /* the job being made */
+static u32 made;                            /* samples of it made so far */
+static size_t total_chars, done_chars;      /* its length, and the part already made */
+static s16 acc[4096] __attribute__((aligned(32)));
+static int acc_n;
+
+/* enough made yet that the rest keeps up? (see HOLD_MAX_MS) */
+static void hold_check(void) {
+    if (!holding) return;
+    float spent = (ticks_to_millisecs(gettime()) - hold_at) / 1000.0f;
+    float secs = made / (float)RATE;
+    float speed = spent > 0.05f ? secs / spent : 99;   /* seconds of him made a second */
+    float per_char = done_chars ? secs / done_chars : 0.07f;   /* (about 14 letters a second, until it's known) */
+    float left = total_chars * per_char - secs;   /* seconds of him still to make */
+    if (left < 0) left = 0;
+    float need = speed < 1 ? left * (1 / speed - 1) * 1.15f + 0.3f : 0;
+    if (secs >= need || spent * 1000 >= HOLD_MAX_MS) holding = false;
+}
+
+/* into the ring: what's gathered (a multiple of 16 samples; all of it, padded with quiet, if last) */
+static void flush(bool last) {
+    int k = last ? (acc_n + 15) & ~15 : acc_n & ~15;
+    if (k <= 0) return;
+    for (int j = acc_n; j < k; j++) acc[j] = 0;
+    /* room in the ring? (he never gets four minutes ahead, but just in case)
+     * And once he's several seconds ahead, it rests: the rest of the app,
+     * the controls and the AI, get their turn. */
+    while (cur_gen == gen && (wpos + (u32)k - rpos > RING_SAMPLES - CHUNK * NCHUNKS || (!holding && wpos - rpos > RATE * 5))) thr_sleep_ms(20);
+    if (cur_gen != gen) { acc_n = 0; return; }
+    ring_io(true, acc, wpos, (u32)k);
+    wpos += (u32)k;
+    made += (u32)k;
+    int rest = acc_n - k;
+    if (rest > 0) memmove(acc, acc + k, rest * 2); else rest = 0;
+    acc_n = rest;
+    hold_check();
+}
+
+static void put(const s16 *x, int n) {
+    while (n > 0) {
+        int k = (int)(sizeof(acc) / 2) - acc_n;
+        if (k > n) k = n;
+        memcpy(acc + acc_n, x, k * 2);
+        acc_n += k; x += k; n -= k;
+        if (acc_n >= 2048) flush(false);   /* (a little over a tenth of a second at a time) */
+        if (cur_gen != gen) return;
+    }
+}
+
+static int streamed(const cst_wave *w, int start, int size, int last, cst_audio_streaming_info *asi) {
+    (void)last; (void)asi;
+    if (cur_gen != gen) return CST_AUDIO_STREAM_STOP;   /* (cut off: stop making the rest) */
+    put(w->samples + start, size);
+    return cur_gen == gen ? CST_AUDIO_STREAM_CONT : CST_AUDIO_STREAM_STOP;
+}
+
 static void *talk_main(void *arg) {
     (void)arg;
     /* Flite first */
@@ -183,10 +257,18 @@ static void *talk_main(void *arg) {
         flite_add_lang("usenglish", usenglish_init, cmulex_init);
         voice = register_cmu_us_awb(NULL);
         saywords_teach(voice);   /* the words it would get wrong */
+        if (voice) {
+            if (VOICE_SPEEDUP) feat_set_int(voice->features, "mlsa_speed_param", VOICE_SPEEDUP);
+            cst_audio_streaming_info *asi = new_audio_streaming_info();
+            asi->min_buffsize = 1024;
+            asi->asc = streamed;
+            feat_set(voice->features, "streaming_info", audio_streaming_info_val(asi));
+        }
     }
     cst_errjmp = NULL;
     ready = voice != NULL;
-    static s16 stage[16384] __attribute__((aligned(32)));
+    static s16 gap[RATE / 6];   /* a short pause after each sentence */
+    memset(gap, 0, sizeof(gap));
     u32 done_gen = 0;
     for (;;) {
         if (!ready || job_gen == done_gen) { thr_sleep_ms(20); continue; }
@@ -196,8 +278,15 @@ static void *talk_main(void *arg) {
         saywords_tidy(job, text, sizeof(text));   /* ("Hmm" said as a hum, not spelled out; "e.g." as "for example"...) */
         thr_unlock(&job_lock);
         done_gen = g;
+        cur_gen = g;
         making = true;
         const char *p = text;
+        total_chars = strlen(text);
+        done_chars = 0;
+        made = 0;
+        acc_n = 0;
+        hold_at = ticks_to_millisecs(gettime());
+        holding = true;
         char sentence[400];
         bool first = true;
         /* a moment of quiet first, so the start of the first word isn't lost
@@ -211,29 +300,16 @@ static void *talk_main(void *arg) {
             first = false;
             cst_wave *w = NULL;
             cst_errjmp = &jb;
-            if (!setjmp(jb)) w = flite_text_to_wave(sentence, voice);
+            if (!setjmp(jb)) w = flite_text_to_wave(sentence, voice);   /* (into the ring as it's made: streamed) */
             cst_errjmp = NULL;
-            if (!w) continue;
-            int n = cst_wave_num_samples(w);
-            /* a short pause after each sentence */
-            int pause = RATE / 6;
-            for (int i = 0; i < n + pause && g == gen;) {
-                int k = n + pause - i;
-                if (k > (int)(sizeof(stage) / 2)) k = sizeof(stage) / 2;
-                k &= ~15;
-                if (k <= 0) break;
-                /* room in the ring? (he never gets four minutes ahead, but just in case) */
-                /* (and once he's several seconds ahead, it rests: the rest of the
-                 * app, the controls and the AI, get their turn) */
-                while (g == gen && (wpos + (u32)k - rpos > RING_SAMPLES - CHUNK * NCHUNKS || wpos - rpos > RATE * 5)) thr_sleep_ms(20);
-                for (int j = 0; j < k; j++) stage[j] = i + j < n ? w->samples[i + j] : 0;
-                if (g != gen) break;
-                ring_io(true, stage, wpos, (u32)k);
-                wpos += (u32)k;
-                i += k;
-            }
-            delete_wave(w);
+            if (w) delete_wave(w);
+            if (g != gen) break;
+            done_chars = (size_t)(p - text);
+            put(gap, sizeof(gap) / 2);
         }
+        if (g == gen) flush(true);
+        acc_n = 0;
+        holding = false;
         making = false;
     }
     return NULL;
