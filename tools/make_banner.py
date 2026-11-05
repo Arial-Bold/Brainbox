@@ -7,7 +7,7 @@ app's name), with the name and description that go with it.
 
 Needs Python 3 with Pillow and NumPy, and tools/banner_head.png (a picture
 of his head with a see-through background, drawn by the PC copy of
-source/pixel3d.c)."""
+source/head3d.c)."""
 import os, struct
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
