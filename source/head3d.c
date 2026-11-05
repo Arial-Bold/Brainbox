@@ -981,11 +981,15 @@ void head3d_draw(float x, float y, float scale, float alpha, float mirror_y, Hea
     GX_SetNumTexGens(0);
     GX_SetNumTevStages(1);
     GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR0A0);
-    /* colour: as lit, times the tint (white: as it is) */
-    GX_SetTevColorIn(GX_TEVSTAGE0, GX_CC_ZERO, GX_CC_RASC, GX_CC_KONST, GX_CC_ZERO);
+    /* colour: as lit (times the tint, only when there is one) */
+    if (tint.r == 255 && tint.g == 255 && tint.b == 255)
+        GX_SetTevColorIn(GX_TEVSTAGE0, GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_RASC);
+    else {
+        GX_SetTevColorIn(GX_TEVSTAGE0, GX_CC_ZERO, GX_CC_RASC, GX_CC_KONST, GX_CC_ZERO);
+        GX_SetTevKColorSel(GX_TEVSTAGE0, GX_TEV_KCSEL_K0);
+    }
     GX_SetTevColorOp(GX_TEVSTAGE0, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
     GX_SetTevKColor(GX_KCOLOR0, (GXColor){ tint.r, tint.g, tint.b, to8(alpha) });
-    GX_SetTevKColorSel(GX_TEVSTAGE0, GX_TEV_KCSEL_K0);
     GX_SetTevKAlphaSel(GX_TEVSTAGE0, GX_TEV_KASEL_K0_A);
     GX_SetTevAlphaIn(GX_TEVSTAGE0, GX_CA_ZERO, GX_CA_RASA, GX_CA_KONST, GX_CA_ZERO);
     GX_SetTevAlphaOp(GX_TEVSTAGE0, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);

@@ -142,6 +142,12 @@ static struct {
 } sc;
 
 static mutex_t lock = LWP_MUTEX_NULL;
+/* A watchman: if the picture ever stops updating for a few seconds, it
+ * notes where the drawing had got to in stuck.txt beside the app (so a
+ * freeze on someone's console can be found). */
+static volatile u32 frames_done;
+static volatile int draw_step;
+#define STEP(n) (draw_step = (n))
 static void L(void) { LWP_MutexLock(lock); }
 static void U(void) { LWP_MutexUnlock(lock); }
 static void cpy(char *dst, const char *src, size_t n) { snprintf(dst, n, "%s", src ? src : ""); }
@@ -998,8 +1004,11 @@ static void stage(void) {
 	pose_update(t);
 	Intro in = intro_now();
 	float cx = px_now;
+	STEP(2);
 	room(cx);
+	STEP(3);
 	head3d_build(&pose);
+	STEP(4);
 	/* (making him the first time sets up the GPU's vertex description for his
 	 * arrays: back to the 2D drawing's, before anything else is drawn) */
 	frame_setup();
@@ -1012,50 +1021,47 @@ static void stage(void) {
 	{
 		float refl = in.head > 0 || in.sweeping ? 0.16f : 0.16f * in.ghost * 2.5f;
 		clip_rows(HORIZON, 99999);
+		STEP(5);
 		head_pass(cx + jx, refl, -0.95f, NULL);
+		STEP(6);
 		GX_SetScissor(0, 0, rmode->fbWidth, rmode->efbHeight);
 	}
 	beam(cx, 60, in.beam);
+	STEP(7);
 	HeadBox box = { 0, 0, 0, 0 };
 	if (in.shimmer) {
 		/* beaming: him fading, with a glowing outline over him */
 		head_pass(cx, in.head, -1000, &box);
-		if (in.ghost > 0.01f) {
-			GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_ONE, GX_LO_CLEAR);
-			head3d_tint(150, 210, 255);
-			head_pass(cx, in.ghost, -1000, NULL);
-			head3d_tint(255, 255, 255);
-		}
+		(void)in.ghost;   /* (the motes give the glow) */
 	} else if (in.sweeping) {
+		STEP(8);
 		/* below the line: him; above it: only his faint outline */
 		clip_rows(sweep_y, 99999);
 		head_pass(cx, 1, -1000, &box);
 		clip_rows(-99999, sweep_y);
-		GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_ONE, GX_LO_CLEAR);   /* (light added: a glowing outline) */
-		head3d_tint(110, 190, 255);
 		head_pass(cx, in.ghost, -1000, NULL);
-		head3d_tint(255, 255, 255);
 		GX_SetScissor(0, 0, rmode->fbWidth, rmode->efbHeight);
 	} else if (in.head > 0) {
 		head_pass(cx, in.head, -1000, &box);
 	} else if (in.ghost > 0) {
+		STEP(9);
 		/* the flicker: faint, jumping sideways, in a few slices */
 		for (int k = 0; k < 3; k++) {
 			float y0 = head_top + (head_bot - head_top) * k / 3, y1 = head_top + (head_bot - head_top) * (k + 1) / 3;
 			float sx = (float)((int)((now_ms() / 33 + k * 5) * 104729 % 11) - 5) * in.jitter;
 			clip_rows(y0, y1);
-			GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_ONE, GX_LO_CLEAR);   /* (light added: a glowing flicker) */
-			head3d_tint(110, 190, 255);
 			head_pass(cx + sx, in.ghost, -1000, NULL);
-			head3d_tint(255, 255, 255);
 		}
 		GX_SetScissor(0, 0, rmode->fbWidth, rmode->efbHeight);
 	}
+	STEP(10);
 	if (box.x1 > box.x0) last_box = box;
 	/* hologram scanlines: over him and his props (and his reflection) exactly,
 	 * using the depth he left behind, and over the beam around him */
 	if (in.beam > 0) scanlines(cx, 60, t);
+	STEP(11);
 	pedestal_ring(cx, in.beam);
+	STEP(12);
 	/* the bright line of the sweep, and the glow as he arrives */
 	if (in.sweeping) {
 		mode_color();
@@ -1072,6 +1078,7 @@ static void stage(void) {
 		soft_blob(cx, (head_top + head_bot) / 2, (last_box.x1 - last_box.x0) * 0.75f, (head_bot - head_top) * 0.65f, rgba(110, 170, 255, (u8)(110 * k)));
 		GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
 	}
+	STEP(13);
 	sparkles(cx, t, in.sparkle);
 	if (in.motes > 0) {
 		/* a column of twinkling motes over him as he goes and comes */
@@ -1088,7 +1095,9 @@ static void stage(void) {
 		}
 		GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
 	}
+	STEP(14);
 	bloom();
+	STEP(15);
 	/* fog round his head (the foggy-headed greeting) */
 	if (fog_now > 0.01f) {
 		for (int i = 0; i < 14; i++) {
@@ -1380,6 +1389,7 @@ static void draw_frame(void) {
 	frame_setup();
 	L();
 	stage();
+	STEP(30);
 	bool opening = sc.intro != 0;
 	if (!opening) {
 	chat();
@@ -1404,9 +1414,31 @@ static void draw_frame(void) {
 	U();
 }
 
+static void *watch_main(void *arg) {
+	(void)arg;
+	u32 last = 0;
+	int still = 0;
+	bool noted = false;
+	while (running) {
+		usleep(500 * 1000);
+		if (frames_done != last) { last = frames_done; still = 0; continue; }
+		if (++still < 8 || noted || !storage_ok()) continue;
+		noted = true;
+		char t[400], path[300];
+		snprintf(t, sizeof(t), "The picture stopped after %u frames, at drawing step %d.\n"
+		         "opening %d (%u ms in), beaming %u, screen %d, overlay %d, glow %d, 480p %d\n",
+		         (unsigned)frames_done, draw_step, sc.intro, sc.intro ? (unsigned)(now_ms() - sc.intro_at) : 0,
+		         (unsigned)sc.beam_at, sc.screen, sc.overlay, ui_set.glow, rmode ? (rmode->viTVMode & VI_NON_INTERLACE) != 0 : -1);
+		storage_path(path, sizeof(path), "stuck.txt");
+		storage_write_atomic(path, t, strlen(t));
+	}
+	return NULL;
+}
+
 static void *video_main(void *arg) {
 	(void)arg;
 	while (running) {
+		STEP(1);
 		if (video_change) {
 			video_change = false;
 			GXRModeObj old = mode;
@@ -1421,9 +1453,12 @@ static void *video_main(void *arg) {
 			}
 		}
 		draw_frame();
+		STEP(50);
 		GX_SetZMode(GX_TRUE, GX_ALWAYS, GX_TRUE);   /* so the copy clears depth too */
 		GX_CopyDisp(xfb[fb], GX_TRUE);
 		GX_DrawDone();
+		STEP(51);
+		frames_done++;
 		VIDEO_SetNextFramebuffer(xfb[fb]);
 		VIDEO_Flush();
 		VIDEO_WaitVSync();
@@ -1458,6 +1493,8 @@ void ui_init(void) {
 	sc.props = true;
 	running = true;
 	LWP_CreateThread(&thread, video_main, NULL, NULL, 64 * 1024, 100);
+	static lwp_t watch;
+	LWP_CreateThread(&watch, watch_main, NULL, NULL, 16 * 1024, 120);
 }
 
 void ui_shutdown(void) {
