@@ -880,7 +880,9 @@ static void make_static(void) {
 #endif
 }
 
+static unsigned build_gen;   /* (counts builds: the moving parts' display lists are made once per build) */
 void head3d_build(const HeadPose *ps) {
+    build_gen++;
     static bool made;
     if (!made) {   /* the parts that never change: made, lit and recorded once */
         build(ps, true);
@@ -995,12 +997,41 @@ void head3d_draw(float x, float y, float scale, float alpha, float mirror_y, Hea
     GX_SetTevAlphaOp(GX_TEVSTAGE0, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
     GX_SetZMode(GX_TRUE, zflip ? GX_GEQUAL : GX_LEQUAL, GX_TRUE);
     GX_SetCullMode(GX_CULL_NONE);   /* (every shape is closed: the depth test hides the backs) */
-    /* the moving parts, by group */
+    /* the moving parts, by group: recorded once a frame into display lists
+     * too (he's drawn several times a frame: his reflection, and in the
+     * opening a few more), so each drawing sends the GPU only a few bytes
+     * rather than all of them again (that much at once overran the GPU's
+     * command queue and froze it) */
     static unsigned short dyn[NGRP][MAXT];
-    int dn[NGRP] = { 0, 0, 0, 0 };
-    for (int k = nst; k < ntris; k++) {
-        int g = vgrp[tri[k][0]];
-        if (g < NGRP) dyn[g][dn[g]++] = (unsigned short)k;
+    static int dn[NGRP];
+    static void *ddl[NGRP];
+    static u32 ddl_cap[NGRP], ddl_size[NGRP];
+    static unsigned made_for;
+    if (made_for != build_gen) {
+        made_for = build_gen;
+        for (int g = 0; g < NGRP; g++) dn[g] = 0;
+        for (int k = nst; k < ntris; k++) {
+            int g = vgrp[tri[k][0]];
+            if (g < NGRP) dyn[g][dn[g]++] = (unsigned short)k;
+        }
+#ifndef HEAD3D_NO_DISPLAY_LISTS
+        for (int g = 0; g < NGRP; g++) {
+            ddl_size[g] = 0;
+            if (!dn[g]) continue;
+            u32 need = ((u32)dn[g] * 3 * 4 + 64 * (dn[g] / 20000 + 1) + 127) & ~31u;
+            if (need > ddl_cap[g]) {
+                free(ddl[g]);
+                ddl_cap[g] = need + 16 * 1024;
+                ddl[g] = memalign(32, ddl_cap[g]);
+                if (!ddl[g]) { ddl_cap[g] = 0; continue; }
+            }
+            DCInvalidateRange(ddl[g], ddl_cap[g]);
+            GX_BeginDispList(ddl[g], ddl_cap[g]);
+            send_tris(dyn[g], dn[g]);
+            for (int k = 0; k < 32; k++) wgPipe->U8 = 0;
+            ddl_size[g] = GX_EndDispList();
+        }
+#endif
     }
     for (int g = 0; g < NGRP; g++) {
         if (g != G_HEAD && !show_props) continue;
@@ -1010,7 +1041,8 @@ void head3d_draw(float x, float y, float scale, float alpha, float mirror_y, Hea
         GX_SetCurrentMtx(GX_PNMTX0);
         if (dl[g]) GX_CallDispList(dl[g], dl_size[g]);
         else send_tris(stat_list[g], stat_n[g]);
-        send_tris(dyn[g], dn[g]);
+        if (ddl_size[g]) GX_CallDispList(ddl[g], ddl_size[g]);
+        else send_tris(dyn[g], dn[g]);
     }
 }
 

@@ -219,7 +219,7 @@ void ui_signin(const unsigned char *qr, int size, const char *addr, const char *
 
 /* ================================================================== video */
 
-#define FIFO_SIZE (256 * 1024)
+#define FIFO_SIZE (1024 * 1024)   /* (room for a busy frame: he can be drawn several times in one) */
 static void *fifo;
 static u32 *xfb[2];
 static int fb;
