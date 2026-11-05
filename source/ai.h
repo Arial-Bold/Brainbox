@@ -31,4 +31,8 @@ const char *ai_model(void);              /* the model in use (it can change if t
 bool ai_can_hear(AiBrain b);
 void ai_hear(const short *pcm, int n, int rate, AiBrain e, const char *key, const char *model);
 const char *ai_heard(void);      /* what was heard, once it's known (NULL until then) */
+/* what was heard is checked with this first (on the AI's own thread): when
+ * it returns true, the question isn't sent on (AI_DONE, no answer), so the
+ * caller can answer it itself straight away (his little secrets) */
+void ai_hear_filter(bool (*mine)(const char *heard));
 bool ai_heard_nothing(void);     /* AI_FAILED because no words were heard */

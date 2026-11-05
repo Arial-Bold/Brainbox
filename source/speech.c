@@ -223,7 +223,9 @@ static void *talk_main(void *arg) {
                 k &= ~15;
                 if (k <= 0) break;
                 /* room in the ring? (he never gets four minutes ahead, but just in case) */
-                while (g == gen && wpos + (u32)k - rpos > RING_SAMPLES - CHUNK * NCHUNKS) thr_sleep_ms(20);
+                /* (and once he's several seconds ahead, it rests: the rest of the
+                 * app, the controls and the AI, get their turn) */
+                while (g == gen && (wpos + (u32)k - rpos > RING_SAMPLES - CHUNK * NCHUNKS || wpos - rpos > RATE * 5)) thr_sleep_ms(20);
                 for (int j = 0; j < k; j++) stage[j] = i + j < n ? w->samples[i + j] : 0;
                 if (g != gen) break;
                 ring_io(true, stage, wpos, (u32)k);

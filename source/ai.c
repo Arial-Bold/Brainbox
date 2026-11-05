@@ -373,6 +373,9 @@ static bool transcribe(void) {
     return false;
 }
 
+static bool (*hear_mine)(const char *);
+void ai_hear_filter(bool (*mine)(const char *)) { hear_mine = mine; }
+
 static void *hear_main(void *arg) {
     (void)arg;
     if (!network()) return NULL;
@@ -380,6 +383,7 @@ static void *hear_main(void *arg) {
     if (!heard[0]) { heard_nothing = true; answer[0] = 0; state = AI_FAILED; return NULL; }
     snprintf(question, sizeof(question), "%s", heard);
     heard_ready = true;
+    if (hear_mine && hear_mine(heard)) { answer[0] = 0; state = AI_DONE; return NULL; }   /* (not one for the AI) */
     run_question();
     return NULL;
 }

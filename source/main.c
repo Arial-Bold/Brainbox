@@ -651,6 +651,10 @@ static bool says(const char *q, const char *words) {
 	return strstr(t, words) != NULL;
 }
 
+static bool is_egg(const char *q) {
+	return says(q, "beam me up") || says(q, "more power") || says(q, "all shes got") || says(q, "warp speed");
+}
+
 static bool easter_egg(const char *q) {
 	if (says(q, "beam me up")) {
 		ui_layout(1);
@@ -690,6 +694,20 @@ static void answered(const char *q) {
 	}
 }
 
+/* A question he was told to never mind can still be on its way; a new one
+ * waits for it to finish (saying so, with B to give up). false: given up. */
+static bool wait_for_brain(void) {
+	if (ai_state() != AI_BUSY) return true;
+	ui_caption(UI_CAP_THINK, "Just a moment, I'm still finishing a thought\x85");
+	hints(1, "B:Never mind");
+	wait_release();
+	while (ai_state() == AI_BUSY) {
+		read_input();
+		if (down & PAD_BUTTON_B) { ui_caption(UI_CAP_NONE, ""); wait_release(); return false; }
+	}
+	return true;
+}
+
 /* asks the question and has him answer it */
 static void ask(const char *q) {
 	asked_once = true;
@@ -699,7 +717,8 @@ static void ask(const char *q) {
 	ui_caption(UI_CAP_THINK, "Hmm, let me think about that\x85");
 	ui_pose(1, 0, true);
 	hints(1, "B:Never mind");
-	while (ai_state() == AI_BUSY) read_input();   /* (a question he was told to never mind, still on its way) */
+	if (!wait_for_brain()) { ui_pose(0, 0, true); ui_caption(UI_CAP_NONE, ""); return; }
+	ui_caption(UI_CAP_THINK, "Hmm, let me think about that\x85");
 	use_brain();
 	ai_ask(q);
 	bool cancelled = false;
@@ -756,7 +775,7 @@ static void listen_and_ask(void) {
 		return;
 	}
 	speech_stop();
-	while (ai_state() == AI_BUSY) read_input();   /* (a question he was told to never mind, still on its way) */
+	if (!wait_for_brain()) return;
 	asked_once = true;
 	if (!listen_start()) { has_mic = false; ui_toast("The microphone isn't answering. Is it pushed all the way in?"); return; }
 	ui_layout(0);
@@ -798,7 +817,12 @@ static void listen_and_ask(void) {
 		read_input();
 		if (!shown && ai_heard()) {
 			shown = true;
-			if (says(ai_heard(), "beam me up") || says(ai_heard(), "more power") || says(ai_heard(), "all shes got") || says(ai_heard(), "warp speed")) { egg = true; break; }
+			if (is_egg(ai_heard())) {
+				/* (it isn't sent on to the AI: see ai_hear_filter, so it's finished with in a moment) */
+				egg = true;
+				while (ai_state() == AI_BUSY) read_input();
+				break;
+			}
 			ui_chat(ai_heard(), "");
 			ui_caption(UI_CAP_THINK, "Hmm, let me think about that\x85");
 			ui_pose(1, 0, true);
@@ -924,6 +948,7 @@ int main(int argc, char **argv) {
 	}
 	if (storage_ok()) update_remove_old();   /* (the version an update replaced, now this one has started) */
 	use_brain();
+	ai_hear_filter(is_egg);   /* (his little secrets aren't sent on to the AI) */
 	ai_warm_up();   /* the network and the clock, while he switches on */
 	ui_layout(0);
 	ui_pose(0, 0, true);
