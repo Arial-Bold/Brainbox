@@ -293,17 +293,45 @@ static bool choose_brain(void) {
 		ui_overlay_rows(AI_COUNT);
 		ui_overlay_select(row);
 		ui_overlay_note(ai_name(order[row]), notes[order[row]]);
-		hints(3, "S:Move", "A:Choose", "B:Back");
+		/* X signs out of the one chosen (pressed twice, so it isn't by accident): then A signs in again, with a new key */
+		bool signed_out = false;
+		int armed = -1;
+		u64 armed_at = 0;
 		for (;;) {
+			if (ui_set.key[order[row]][0]) hints(4, "S:Move", "A:Choose", "X:Sign out", "B:Back");
+			else hints(3, "S:Move", "A:Choose", "B:Back");
 			read_input();
+			u64 now = ticks_to_millisecs(gettime());
+			if (armed >= 0 && now - armed_at > 3000) armed = -1;
 			if (down & (PAD_BUTTON_UP | PAD_BUTTON_DOWN)) {
 				row = (row + ((down & PAD_BUTTON_UP) ? AI_COUNT - 1 : 1)) % AI_COUNT;
 				ui_overlay_select(row);
 				ui_overlay_note(ai_name(order[row]), notes[order[row]]);
+				armed = -1;
+			}
+			if ((down & PAD_BUTTON_X) && ui_set.key[order[row]][0]) {
+				AiBrain b = order[row];
+				if (armed != row) {
+					armed = row;
+					armed_at = now;
+					char m[96];
+					snprintf(m, sizeof(m), "Press X again to sign out of %s", ai_name(b));
+					ui_toast(m);
+				} else {
+					ui_set.key[b][0] = 0;   /* (the key is forgotten, on the SD card too) */
+					save_settings();
+					if (b == ui_set.brain) use_brain();
+					char m[96];
+					snprintf(m, sizeof(m), "Signed out of %s. A signs in again with a new key.", ai_name(b));
+					ui_toast(m);
+					signed_out = true;
+					break;
+				}
 			}
 			if (down & PAD_BUTTON_B) { ui_overlay(UI_OVERLAY_NONE, ""); return ui_set.key[ui_set.brain][0] != 0; }
 			if (down & PAD_BUTTON_A) break;
 		}
+		if (signed_out) continue;   /* (the list again, with its tag changed) */
 		int b = order[row];
 		if (ui_set.key[b][0]) {   /* already signed in: just switch */
 			ui_set.brain = b;
