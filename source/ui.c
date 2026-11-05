@@ -1332,7 +1332,8 @@ static void settings_screen(void) {
 	text(34, 72, "Settings", 12, TITLE, 0, 380);
 	rule(32, 84, 576);
 	for (int i = 0; i < sc.orow_count; i++) {
-		float x = 34, y = 92 + i * 25 + (i >= 4 ? 6 : 0) + (i >= 7 ? 6 : 0), w = 566, h = 22, cy = y + h / 2;
+		/* (eleven rows, in three groups, all inside the frame) */
+		float x = 34, y = 92 + i * 23 + (i >= 4 ? 6 : 0) + (i >= 7 ? 6 : 0), w = 566, h = 21, cy = y + h / 2;
 		bool on = i == sc.osel;
 		rect_v(x, y, w, h, rgba(76, 94, 114, on ? 150 : 80), rgba(40, 54, 70, on ? 160 : 90));
 		rect(x + 1, y + 1, w - 2, 1, rgba(255, 255, 255, 30));

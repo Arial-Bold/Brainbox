@@ -78,6 +78,9 @@ static void synth_shimmer(void) {
 static void *synth_main(void *arg) {
 	(void)arg;
 	synth_holo();
+	/* (the opening's sound is made first, ahead of everything else, so the
+	 * opening isn't kept waiting; the rest are made in the background) */
+	LWP_SetThreadPriority(LWP_GetSelf(), 60);
 	for (unsigned k = 0; k < sizeof(synth_order) / sizeof(synth_order[0]) && !synth_quit; k++) synth(synth_order[k]);
 	if (!synth_quit) synth_shimmer();
 	return NULL;
@@ -106,7 +109,7 @@ void sound_init(void) {
 	for (int i = 0; i < SFX_VOICES; i++) sfx_voice[i] = AESND_AllocateVoice(sfx_cb);
 	holo_voice = AESND_AllocateVoice(sfx_cb);
 	ready = true;
-	synth_started = thr_create(&synth_th, synth_main, NULL, 32 * 1024, 60);
+	synth_started = thr_create(&synth_th, synth_main, NULL, 32 * 1024, 110);
 	if (!synth_started) synth_holo();
 	if (!synth_started) for (unsigned k = 0; k < sizeof(synth_order) / sizeof(synth_order[0]); k++) synth(synth_order[k]);
 }
