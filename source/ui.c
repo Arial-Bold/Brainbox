@@ -1242,7 +1242,12 @@ static void caption(void) {
 	float K = ease(vis);
 	#define KC(c) alpha((c), K)
 	float t = now / 1000.0f;
-	float w = kind == UI_CAP_TYPE ? 540 : 380, x = 320 - w / 2, y = 400;
+	/* the box fits what it says (the typing box stays wide, for the line being typed) */
+	float lead = kind == UI_CAP_THINK ? 44 : kind == UI_CAP_LISTEN ? 88 : 22;
+	float w = kind == UI_CAP_TYPE ? 540 : lead + text_width(cap, 13) + 22;
+	if (w < 140) w = 140;
+	if (w > 580) w = 580;
+	float x = 320 - w / 2, y = 400;
 	rrect_v(x, y, w, 32, 14, KC(rgba(20, 18, 70, 225)), KC(rgba(20, 18, 70, 225)));
 	outline(x, y, w, 32, 14, 1, KC(rgba(175, 175, 255, 150)));
 	float tx = x + 18;
