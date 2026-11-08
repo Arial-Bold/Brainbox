@@ -1216,6 +1216,17 @@ static void chat(void) {
 }
 
 /* the caption bar along the bottom of the stage */
+/* the "working on it" mark the other apps use: a ring of dots going round,
+ * the leading one brightest and the rest fading behind it */
+static void spinner(float cx, float cy, float r, float dot, float k) {
+	float t = now_ms() / 1000.0f;
+	for (int i = 0; i < 8; i++) {
+		float ang = i * 6.2832f / 8;
+		float f = fmodf(t * 1.4f - i / 8.0f + 10, 1.0f);
+		circle(cx + cosf(ang) * r, cy + sinf(ang) * r, dot, alpha(rgba(200, 215, 255, (u8)(60 + 195 * (1 - f))), k));
+	}
+}
+
 static void caption(void) {
 	/* when it goes, it fades out (what it last said, fading) */
 	static int kind;
@@ -1236,8 +1247,8 @@ static void caption(void) {
 	outline(x, y, w, 32, 14, 1, KC(rgba(175, 175, 255, 150)));
 	float tx = x + 18;
 	if (kind == UI_CAP_THINK) {
-		for (int i = 0; i < 3; i++) circle(tx + 4 + i * 11, y + 16, 3.5f, KC(rgba(130, 220, 255, (u8)(110 + 120 * (0.5f + 0.5f * sinf(t * 6 - i))))));
-		tx += 40;
+		spinner(tx + 8, y + 16, 7, 1.8f, K);
+		tx += 26;
 	} else if (kind == UI_CAP_LISTEN) {
 		/* a red "recording" light, and bars that follow how loud it is */
 		circle(tx + 4, y + 16, 4.5f, KC(rgba(255, 70, 80, (u8)(170 + 85 * (0.5f + 0.5f * sinf(t * 5))))));
@@ -1383,14 +1394,7 @@ static void update_panel(void) {
 		hx += 26;
 	}
 	text(hx, hy, sc.upd_head, 18, TEXT, 0, x + w - 60 - hx);
-	if (sc.upd_busy) {   /* a ring of dots going round */
-		float t = now_ms() / 1000.0f, cx = x + w - 34, cy = hy;
-		for (int i = 0; i < 8; i++) {
-			float ang = i * 6.2832f / 8;
-			float k = fmodf(t * 1.4f - i / 8.0f + 10, 1.0f);
-			circle(cx + cosf(ang) * 8, cy + sinf(ang) * 8, 2.0f, rgba(200, 215, 255, (u8)(60 + 195 * (1 - k))));
-		}
-	}
+	if (sc.upd_busy) spinner(x + w - 34, hy, 8, 2.0f, 1);
 	text(x + 20, hy + 22, sc.upd_sub, 12, SOFT, 0, w - 40);
 	/* what's new */
 	float bx = x + 16, by = hy + 40, bw = w - 32, bh = y + h - 64 - by - (sc.upd_progress >= -1 ? 20 : 0);
