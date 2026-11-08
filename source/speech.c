@@ -84,13 +84,26 @@ static bool dma(u32 dir, void *mram, u32 aram, u32 len) {
 /* the ring, in samples (positions only ever grow; the ARAM address wraps) */
 static volatile u32 wpos, rpos;
 static volatile u32 gen;                   /* bumped to cut off what's being said */
+/* Dropping what's queued (a new answer, or stopping him): only the player
+ * moves rpos, so it's asked to, to here. (When other threads moved it too,
+ * a move at just the wrong moment could leave the player reading past what
+ * was written: old or empty sound memory, heard as a burst of static.) */
+static volatile u32 drop_seq, drop_to;
+static void drop_queued(void) { drop_to = wpos; drop_seq++; }
 
+/* (a copy that fails is tried again; one that still fails reads as quiet,
+ * never as whatever was in memory) */
 static void ring_io(bool write, s16 *buf, u32 pos, u32 n) {   /* n: a multiple of 16 */
     while (n) {
         u32 at = pos % RING_SAMPLES, k = RING_SAMPLES - at < n ? RING_SAMPLES - at : n;
         DCFlushRange(buf, k * 2);
-        dma(write ? AR_MRAMTOARAM : AR_ARAMTOMRAM, buf, RING_BASE + at * 2, k * 2);
-        if (!write) DCInvalidateRange(buf, k * 2);
+        bool ok = false;
+        for (int tries = 0; tries < 4 && !ok; tries++)
+            ok = dma(write ? AR_MRAMTOARAM : AR_ARAMTOMRAM, buf, RING_BASE + at * 2, k * 2);
+        if (!write) {
+            DCInvalidateRange(buf, k * 2);
+            if (!ok) memset(buf, 0, k * 2);
+        }
         buf += k; pos += k; n -= k;
     }
 }
@@ -123,10 +136,13 @@ static volatile bool making;               /* the speaking thread is busy */
 static void *player_main(void *arg) {
     (void)arg;
     static s16 tmp[CHUNK] __attribute__((aligned(32)));
+    u32 seen_drop = 0;
     for (;;) {
         while (filled < handed + NCHUNKS - 2) {
             int k = (int)(filled % NCHUNKS);
+            if (drop_seq != seen_drop) { seen_drop = drop_seq; rpos = drop_to; }
             u32 have = wpos - rpos;
+            if (have > RING_SAMPLES) { rpos = wpos; have = 0; }   /* (can't happen; but never play what isn't there) */
             if (holding && ticks_to_millisecs(gettime()) - hold_at > HOLD_MAX_MS + 500) holding = false;   /* (just in case) */
             if (!holding && (have >= CHUNK || (have > 0 && !making))) {
                 u32 n = have >= CHUNK ? CHUNK : ((have + 15) & ~15u);
@@ -287,6 +303,7 @@ static void *talk_main(void *arg) {
         acc_n = 0;
         hold_at = ticks_to_millisecs(gettime());
         holding = true;
+        drop_queued();   /* (exactly here, so nothing of the last answer slips through) */
         char sentence[400];
         bool first = true;
         /* a moment of quiet first, so the start of the first word isn't lost
@@ -294,7 +311,8 @@ static void *talk_main(void *arg) {
         {
             static s16 lead[RATE / 8] __attribute__((aligned(32)));
             for (int j = 0; j < RATE / 8; j++) lead[j] = (s16)((j * 7919 % 5) - 2);   /* (the faintest hiss, not silence) */
-            if (wpos == rpos) { ring_io(true, lead, wpos, RATE / 8 & ~15u); wpos += RATE / 8 & ~15u; }
+            ring_io(true, lead, wpos, RATE / 8 & ~15u);
+            wpos += RATE / 8 & ~15u;
         }
         while (g == gen && next_sentence(&p, sentence, sizeof(sentence), first)) {
             first = false;
@@ -349,14 +367,14 @@ void speech_say(const char *text) {
     snprintf(job, sizeof(job), "%s", text);
     gen++;
     job_gen = gen;
-    rpos = wpos;   /* drop what's queued */
+    drop_queued();   /* (silent straight away; the speaking thread drops again as it starts) */
     thr_unlock(&job_lock);
 }
 
 void speech_stop(void) {
     thr_lock(&job_lock);
     gen++;
-    rpos = wpos;
+    drop_queued();
     thr_unlock(&job_lock);
 }
 
