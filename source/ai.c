@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <strings.h>
 
 #define ANSWER_MAX 4000
 #define TURNS 12                     /* questions and answers kept for context */
@@ -21,7 +22,32 @@ static const char *SYSTEM =
     "no lists, headings, markdown (no asterisks or underscores, not even around titles), emoji or web addresses; write numbers and symbols the way they are "
     "said aloud when that is clearer. Be warm, curious and encouraging, with an old professor's gentle "
     "humor; now and then begin with 'Ah!' or 'Hmm.' You're a Scot: now and then a light Scottish word like 'aye', 'wee' or 'och' fits, but don't overdo it. If a question needs a long answer, give the heart of "
-    "it and offer to say more. You are an AI character, not a real person.";
+    "it and offer to say more. You are an AI character, not a real person. "
+    "You can talk about any subject, including politics, religion and current events: answer those even-handedly, "
+    "with the facts and the main points of view, without taking sides yourself, rather than declining.";
+
+/* added when he can look things up: the brain asks for a search instead of guessing */
+static const char *SEARCH_RULE =
+    " If answering needs up-to-date information you may not have, such as news, recent events, sports results, "
+    "prices, the weather, who holds a job now, or anything after your training, reply with only the single word "
+    "SEARCH and nothing else.";
+/* added when it can't (or the search didn't work) */
+static const char *NO_SEARCH =
+    " If a question needs up-to-date information you don't have, say kindly that you can't be sure of the latest, "
+    "and share what you do know.";
+/* for the answer made with Google Search */
+static const char *SEARCHED =
+    " You have just looked this up with Google Search. Answer from what you found, and begin with words like "
+    "'According to Google,' so it's clear where it came from.";
+
+static char search_key[200];
+static bool search_on;
+static volatile bool searching;
+void ai_set_search(const char *k, bool on) { snprintf(search_key, sizeof(search_key), "%s", k ? k : ""); search_on = on && search_key[0]; }
+bool ai_searching(void) { return searching; }
+
+static char sys[2600];   /* the instructions for this request */
+static void make_sys(const char *extra) { snprintf(sys, sizeof(sys), "%s%s", SYSTEM, extra ? extra : ""); }
 
 typedef struct { bool user; char *text; } Turn;
 static Turn turns[TURNS];
@@ -110,7 +136,7 @@ static const char *build(Buf *b_, char *url, size_t ucap, char *headers, size_t 
         snprintf(url, ucap, "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent", use_model);
         snprintf(headers, hcap, "x-goog-api-key: %s\r\n", key);
         buf_add(&b, "{\"systemInstruction\":{\"parts\":[{\"text\":");
-        buf_add_json_string(&b, SYSTEM);
+        buf_add_json_string(&b, sys);
         buf_add(&b, "}]},\"contents\":[");
         messages(&b, question, true);
         buf_addf(&b, "],\"generationConfig\":{\"maxOutputTokens\":2048%s}}", gemini_quick ? QUICK : "");
@@ -120,7 +146,7 @@ static const char *build(Buf *b_, char *url, size_t ucap, char *headers, size_t 
         snprintf(url, ucap, "https://api.anthropic.com/v1/messages");
         snprintf(headers, hcap, "x-api-key: %s\r\nanthropic-version: 2023-06-01\r\n", key);
         buf_addf(&b, "{\"model\":\"%s\",\"max_tokens\":600,\"system\":", use_model);
-        buf_add_json_string(&b, SYSTEM);
+        buf_add_json_string(&b, sys);
         buf_add(&b, ",\"messages\":[");
         messages(&b, question, false);
         buf_add(&b, "]}");
@@ -130,7 +156,7 @@ static const char *build(Buf *b_, char *url, size_t ucap, char *headers, size_t 
         snprintf(url, ucap, brain == AI_GROQ ? "https://api.groq.com/openai/v1/chat/completions" : "https://api.openai.com/v1/chat/completions");
         snprintf(headers, hcap, "Authorization: Bearer %s\r\n", key);
         buf_addf(&b, "{\"model\":\"%s\",\"max_completion_tokens\":2048,\"messages\":[{\"role\":\"system\",\"content\":", use_model);
-        buf_add_json_string(&b, SYSTEM);
+        buf_add_json_string(&b, sys);
         buf_add(&b, "}");
         messages(&b, question, false);   /* (each with a comma before it) */
         buf_add(&b, "]}");
@@ -199,7 +225,63 @@ static void plain_text(char *s) {
     *o = 0;
 }
 
+/* did the brain ask to look it up? ("SEARCH", give or take a full stop) */
+static bool wants_search(const char *a) {
+    while (*a == ' ' || *a == '\n') a++;
+    if (strncasecmp(a, "search", 6)) return false;
+    for (a += 6; *a; a++) if (*a != ' ' && *a != '.' && *a != '!' && *a != '\n') return false;
+    return true;
+}
+
+/* The question answered by Gemini with Google Search (the older Flash
+ * models: on Google's free allowance, searching works with those). The
+ * answer is left in `answer`; false if it couldn't be done. */
+static bool google_answer(void) {
+    static const char *use[2] = { "gemini-2.5-flash", "gemini-2.5-flash-lite" };
+    AiBrain was = brain;
+    for (int i = 0; i < 2; i++) {
+        make_sys(SEARCHED);
+        Buf b = { 0 };
+        char url[300], headers[400], err[200] = "";
+        snprintf(url, sizeof(url), "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent", use[i]);
+        snprintf(headers, sizeof(headers), "x-goog-api-key: %s\r\n", search_key);
+        buf_add(&b, "{\"systemInstruction\":{\"parts\":[{\"text\":");
+        buf_add_json_string(&b, sys);
+        buf_add(&b, "}]},\"contents\":[");
+        messages(&b, question, true);
+        buf_add(&b, "],\"tools\":[{\"google_search\":{}}],\"generationConfig\":{\"maxOutputTokens\":2048,\"thinkingConfig\":{\"thinkingBudget\":0}}}");
+        if (b.failed) { buf_free(&b); return false; }
+        char *resp = NULL;
+        int status = https_post(url, headers, b.s, b.len, &resp, NULL, 256 * 1024, NULL, err, sizeof(err));
+        buf_free(&b);
+        if (status == 200) {
+            /* (its answer can come in a few pieces) */
+            answer[0] = 0;
+            for (int k = 0; k < 6; k++) {
+                char path[64];
+                static char part[ANSWER_MAX];
+                snprintf(path, sizeof(path), "candidates.0.content.parts.%d.text", k);
+                if (!json_get_string(resp, path, part, sizeof(part))) break;
+                strncat(answer, part, sizeof(answer) - strlen(answer) - 1);
+            }
+            free(resp);
+            if (answer[0]) { plain_text(answer); return true; }
+            continue;
+        }
+        if (status > 0) { brain = AI_GEMINI; note_problem(use[i], status, resp); brain = was; }
+        free(resp);
+        if (status < 0) return false;
+    }
+    return false;
+}
+
+static void ask_brain(bool can_search);
 static void run_question(void) {
+    ask_brain(search_on && !testing);
+}
+
+static void ask_brain(bool can_search) {
+    make_sys(can_search ? SEARCH_RULE : NO_SEARCH);
     char err[200] = "";
     const char *models_[5];
     int nm = candidates(models_);
@@ -222,6 +304,16 @@ static void run_question(void) {
         }
         if (status == 200 && json_get_string(resp, path, answer, sizeof(answer)) && answer[0]) {
             plain_text(answer);
+            if (can_search && wants_search(answer)) {   /* it needs looking up */
+                free(resp);
+                searching = true;
+                bool found = google_answer();
+                searching = false;
+                if (!found) { ask_brain(false); return; }   /* (couldn't: what he knows, then) */
+                if (!testing) { remember(true, question); remember(false, answer); }
+                state = AI_DONE;
+                return;
+            }
             if (gone && strcmp(use_model, model)) snprintf(model, sizeof(model), "%s", use_model);   /* (the usual one has gone: keep this one) */
             if (!testing) { remember(true, question); remember(false, answer); }
             free(resp);

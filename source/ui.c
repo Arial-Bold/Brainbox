@@ -30,7 +30,7 @@
 
 /* ================================================================ settings */
 
-UiSettings ui_set = { UI_RES_AUTO, 0, 1, 0, 8, 4, 1, 3 /* Groq */, "", { "", "", "", "" }, { "", "", "", "" }, 0, 1, 0, 1 };
+UiSettings ui_set = { UI_RES_AUTO, 0, 1, 0, 8, 4, 1, 3 /* Groq */, "", { "", "", "", "" }, { "", "", "", "" }, 0, 1, 0, 1, 1 };
 static char settings_file[300];
 static const char *brain_ids[UI_BRAINS] = { "gemini", "claude", "openai", "groq" };
 
@@ -70,6 +70,7 @@ void ui_settings_load(void) {
 		else if (!strcmp(line, "sound.voice")) ui_set.voice_volume = clampi(v, 0, UI_VOLUME_MAX);
 		else if (!strcmp(line, "sound.menu")) ui_set.sound_volume = clampi(v, 0, UI_VOLUME_MAX);
 		else if (!strcmp(line, "chat.captions")) ui_set.captions = v ? 1 : 0;
+		else if (!strcmp(line, "chat.web_search")) ui_set.web_search = v ? 1 : 0;
 		else if (!strcmp(line, "exit.launcher")) snprintf(ui_set.launcher, sizeof(ui_set.launcher), "%s", val);
 		else if (!strcmp(line, "brain")) { for (int i = 0; i < UI_BRAINS; i++) if (!strcmp(val, brain_ids[i])) ui_set.brain = i; }
 		else for (int i = 0; i < UI_BRAINS; i++) {
@@ -99,6 +100,7 @@ bool ui_settings_save(void) {
 	if (!ui_set.glow) n += snprintf(out + n, sizeof(out) - n, "display.glow=0\n");
 	if (ui_set.fps) n += snprintf(out + n, sizeof(out) - n, "display.fps=1\n");
 	if (!ui_set.intro) n += snprintf(out + n, sizeof(out) - n, "display.intro=0\n");
+	if (!ui_set.web_search) n += snprintf(out + n, sizeof(out) - n, "chat.web_search=0\n");
 	return storage_write_atomic(settings_file, out, (size_t)n);
 }
 

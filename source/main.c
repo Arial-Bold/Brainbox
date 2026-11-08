@@ -158,6 +158,14 @@ static void say(const char *you, const char *him) {
 static void use_brain(void) {
 	int b = ui_set.brain;
 	ai_set((AiBrain)b, ui_set.key[b], ui_set.model[b]);
+	ai_set_search(ui_set.key[AI_GEMINI], ui_set.web_search);   /* (Google Search, through Gemini, when he needs to look something up) */
+}
+
+/* while he's waiting for his answer: says so when he's looking it up */
+static void looking_up(void) {
+	static bool shown;
+	if (ai_searching() && !shown) { ui_caption(UI_CAP_THINK, "Let me look that up on the web\x85"); ui_pose(1, 0.3f, true); }
+	shown = ai_searching();
 }
 
 static void save_settings(void) {
@@ -753,6 +761,7 @@ static void ask(const char *q) {
 	bool cancelled = false;
 	while (ai_state() == AI_BUSY) {
 		read_input();
+		looking_up();
 		if (down & PAD_BUTTON_B) { cancelled = true; break; }
 	}
 	ui_pose(0, 0.6f, true);
@@ -856,6 +865,7 @@ static void listen_and_ask(void) {
 			ui_caption(UI_CAP_THINK, "Hmm, let me think about that\x85");
 			ui_pose(1, 0, true);
 		}
+		if (shown) looking_up();
 		if (down & PAD_BUTTON_B) { cancelled = true; break; }
 	}
 	ui_pose(0, 0.6f, true);

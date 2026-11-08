@@ -23,6 +23,11 @@ const char *ai_answer(void);             /* when AI_DONE: the reply (CP-1252), o
 void ai_warm_up(void);                  /* the network and the clock, ready in the background (at start-up) */
 void ai_forget(void);                    /* a new conversation */
 const char *ai_model(void);              /* the model in use (it can change if the usual one has gone) */
+/* Looking things up: with a Gemini key (whichever AI is his brain), when a
+ * question needs today's information the brain says so, and Gemini answers
+ * it with Google Search. gemini_key "" or on false: no searching. */
+void ai_set_search(const char *gemini_key, bool on);
+bool ai_searching(void);                 /* looking it up right now (for "Let me look that up") */
 
 /* Listening (the microphone): what was said goes to an AI that can hear
  * (Groq, Gemini or ChatGPT: e, with its key and model, "" = the usual one) to be

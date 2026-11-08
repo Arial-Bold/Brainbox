@@ -34,6 +34,7 @@ typedef struct {
 	int glow;         /* 1 = the glow round bright things (display.glow=0 in brainbox.ini turns it off) */
 	int fps;          /* 1 = frames a second shown in the corner (display.fps=1 in brainbox.ini) */
 	int intro;        /* 1 = the opening (him switching on) when BrainBox starts (display.intro=0 in brainbox.ini: off) */
+	int web_search;   /* 1 = he looks things up with Google when he needs to (needs Gemini signed in; chat.web_search=0 in brainbox.ini: off) */
 } UiSettings;
 
 extern UiSettings ui_set;
