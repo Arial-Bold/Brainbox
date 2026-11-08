@@ -1447,29 +1447,74 @@ static void overlay_panel(void) {
 	else if (sc.overlay == UI_OVERLAY_SIGNIN) signin_panel();
 }
 
-/* the Settings page: three groups (the picture; sound and the conversation;
- * the AI, Launcher and leaving) */
+/* A fine square grid over part of a bar, as Flashcube's: strongest at one
+ * end (side > 0: the right), fading out across `span` of the width. */
+static void grid_patch(float x, float y, float w, float h, float cell, float span, int side, Color c) {
+	float sw = w * span, x0 = side > 0 ? x + w - sw : x;
+	float lw = pixel_w();
+	for (float gx = cell; gx < sw; gx += cell) {
+		float px = side > 0 ? x0 + sw - gx : x0 + gx;
+		float k = 1 - gx / sw;
+		rect(px, y, lw, h, alpha(c, k));
+	}
+	Color clear = c;
+	clear.a = 0;
+	for (float gy = cell; gy < h; gy += cell) {
+		if (side > 0) rect_h(x0, y + gy, sw, pixel_h(), clear, c);
+		else rect_h(x0, y + gy, sw, pixel_h(), c, clear);
+	}
+}
+
+/* the Settings page, as Flashcube's: one panel, the title and the version
+ * along the top, the rows (the chosen one lit), and what the chosen setting
+ * does in the blue bar at the bottom of the panel */
 static void settings_screen(void) {
-	rect(vl, vt, vr - vl, vb - vt, rgba(0, 0, 0, 110));
-	panel(22, 54, 596, 312);
-	text(34, 72, "Settings", 12, TITLE, 0, 380);
-	rule(32, 84, 576);
+	rect(vl, vt, vr - vl, vb - vt, rgba(0, 0, 0, 150));
+	float pw = 480, px = 320 - pw / 2, py = 22, ph = 392;
+	panel(px, py, pw, ph);
+	text(px + 16, py + 17, "Settings", 15, TITLE, 0, 200);
+	extern const char appversion[];
+	char ver[40];
+	snprintf(ver, sizeof(ver), "BrainBox %s", appversion);
+	text(px + pw - 16, py + 17, ver, 15, SOFT, 2, 220);
+	rect(px + 10, py + 31, pw - 20, 1, rgba(200, 210, 230, 71));
+	const float pitch = 26.5f, rh = 25;
 	for (int i = 0; i < sc.orow_count; i++) {
-		/* (eleven rows, in three groups, all inside the frame) */
-		float x = 34, y = 92 + i * 23 + (i >= 4 ? 6 : 0) + (i >= 7 ? 6 : 0), w = 566, h = 21, cy = y + h / 2;
+		float x = px + 8, y = py + 38 + i * pitch, w = pw - 16, cy = y + rh / 2;
 		bool on = i == sc.osel;
-		rect_v(x, y, w, h, rgba(76, 94, 114, on ? 150 : 80), rgba(40, 54, 70, on ? 160 : 90));
-		rect(x + 1, y + 1, w - 2, 1, rgba(255, 255, 255, 30));
-		text(x + 16, cy, sc.orows[i].label, 13, TEXT, 0, 260);
-		const char *v = sc.orows[i].value;
-		if (v[0] == 2) text(x + w - 16, cy, v + 1, 12, SOFT, 2, 260);
-		else if (v[0] && v[0] != 1) {
-			float vx = x + w - 110;
-			tri(vx - 66, cy, vx - 59, cy - 6, vx - 59, cy + 6, on ? GOLD : DIM);
-			tri(vx + 66, cy, vx + 59, cy - 6, vx + 59, cy + 6, on ? GOLD : DIM);
-			text(vx, cy, v, 13, on ? TEXT : SOFT, 1, 110);
+		if (on) {
+			rrect_v(x, y, w, rh, 3, rgba(140, 160, 180, 87), rgba(70, 90, 110, 56));
+			grid_patch(x + 1, y + 1, w - 2, rh - 2, 7, 0.45f, -1, rgba(200, 235, 245, 51));
+			outline(x, y, w, rh, 3, 1, rgba(215, 225, 240, 153));
 		}
-		if (on) gold_ring(x, y, w, h);
+		text(px + 20, cy, sc.orows[i].label, 14, TEXT, 0, 230);
+		const char *v = sc.orows[i].value;
+		float right = px + pw - 20;
+		if (v[0] == 2) text(right, cy, v + 1, 14, TEXT, 2, 250);        /* information: no arrows */
+		else if (v[0] && v[0] != 1) {                                   /* a choice: between arrows */
+			float vw = fminf(text_width(v, 14), 200);
+			tri(right, cy, right - 9, cy - 7, right - 9, cy + 7, TEXT);
+			text(right - 19, cy, v, 14, TEXT, 2, 200);
+			float lx = right - 19 - vw - 10;
+			tri(lx - 9, cy, lx, cy - 7, lx, cy + 7, TEXT);
+		}
+	}
+	/* what the chosen setting does (or a question, like keeping a new resolution) */
+	float dy = py + ph - 10 - 44, dx = px + 10, dw = pw - 20;
+	outline(dx - 1, dy - 1, dw + 2, 46, 4, 1, rgba(11, 11, 32, 255));
+	rrect_v(dx, dy, dw, 44, 3, rgba(0x2a, 0x22, 0x8c, 255), rgba(0x3b, 0x2c, 0xb6, 255));
+	grid_patch(dx + 1, dy + 1, dw - 2, 42, 7, 0.30f, 1, rgba(190, 190, 255, 41));
+	outline(dx, dy, dw, 44, 3, 1, rgba(175, 175, 255, 153));
+	Color dc = rgba(0xec, 0xeb, 0xff, 255);
+	const char *label = sc.osel >= 0 && sc.osel < sc.orow_count ? sc.orows[sc.osel].label : "";
+	if (!strcmp(sc.status1, label) || !sc.status1[0]) {   /* just what it does, over two lines */
+		static char lines[4][160];
+		int n = wrap(sc.status2, 13, dw - 24, lines, 2);
+		if (n == 1) text(dx + 12, dy + 22, lines[0], 13, dc, 0, 0);
+		else for (int i = 0; i < n; i++) text(dx + 12, dy + 13 + i * 18, lines[i], 13, dc, 0, i == 1 ? dw - 24 : 0);
+	} else {
+		text(dx + 12, dy + 13, sc.status1, 13, dc, 0, dw - 24);
+		text(dx + 12, dy + 31, sc.status2, 13, rgba(0xc9, 0xc6, 0xff, 255), 0, dw - 24);
 	}
 }
 
@@ -1521,9 +1566,7 @@ static void draw_frame(void) {
 	overlay_panel();
 	if (sc.screen == UI_SETTINGS) settings_screen();
 	update_panel();
-	if (sc.screen == UI_SETTINGS || sc.overlay == UI_OVERLAY_LIST || sc.overlay == UI_OVERLAY_SIGNIN) {
-		if (sc.status1[0] && sc.screen == UI_SETTINGS) status_bar();
-	}
+	if (sc.screen == UI_SETTINGS && sc.upd_open && sc.status1[0]) status_bar();   /* (Software Update's own bar, under its window) */
 	hints_row();
 	toast_draw();
 	}

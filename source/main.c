@@ -410,8 +410,9 @@ static void settings_help(int row) {
 	ui_status(help[row][0], help[row][1]);
 	if (row == S_UPDATES && (update_state() == UPD_FAILED || update_state() == UPD_CHECK_FAILED) && update_error()[0])
 		ui_status("Updates", update_error());
-	if (row >= S_BRAIN && row != S_LAUNCHER) hints(3, "S:Move", "A:Select", "B:Back");
-	else hints(3, "S:Move", "A:Change", "B:Back");
+	if (row == S_EXIT) hints(3, "S:Select", "A:Exit", "B:Close");
+	else if (row >= S_BRAIN && row != S_LAUNCHER) hints(3, "S:Select", "A:Open", "B:Close");
+	else hints(3, "S:Select", "A:Change", "B:Close");
 }
 
 /* the Software Update window: what's new in the newest version on GitHub,
