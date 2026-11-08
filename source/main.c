@@ -30,6 +30,7 @@ const char appversion[] = "v1.2";
 /* ---------------------------------------------------------------- input */
 
 static u32 held, down, held_prev;
+static bool listening_now;   /* the microphone is recording (the background goes quiet) */
 static bool dir_sounds = true;   /* the move sounds (not while scrolling his answer) */
 static int repeat;
 
@@ -59,6 +60,7 @@ static void read_input(void) {
 		snprintf(m, sizeof(m), "BrainBox %s is ready to install: Settings > Updates", update_latest_version());
 		ui_toast(m);
 	}
+	sound_ambience_tick(listening_now, speech_busy());
 	if (down & PAD_BUTTON_B) sound_play(SFX_BACK);
 	else if (down & (PAD_BUTTON_A | PAD_BUTTON_X | PAD_BUTTON_Y | PAD_BUTTON_START)) sound_play(SFX_SELECT);
 	else if ((down & dirs) && dir_sounds) sound_play(SFX_HOVER);
@@ -815,7 +817,9 @@ static void listen_and_ask(void) {
 	speech_stop();
 	if (!wait_for_brain()) return;
 	asked_once = true;
-	if (!listen_start()) { has_mic = false; ui_toast("The microphone isn't answering. Is it pushed all the way in?"); return; }
+	listening_now = true;
+	for (int i = 0; i < 10; i++) read_input();   /* (the background fades out before recording) */
+	if (!listen_start()) { listening_now = false; has_mic = false; ui_toast("The microphone isn't answering. Is it pushed all the way in?"); return; }
 	ui_layout(0);
 	ui_chat("", "");
 	ui_pose(0, 0.5f, true);
@@ -833,6 +837,7 @@ static void listen_and_ask(void) {
 	const short *pcm;
 	int n;
 	bool got = listen_stop(&pcm, &n);
+	listening_now = false;
 	ui_listen_level(0);
 	if (!got) {
 		ui_pose(0, 0, true);

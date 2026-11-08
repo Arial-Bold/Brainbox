@@ -16,3 +16,15 @@ float holo_gate(float t);                /* 1 while the beam is on, t seconds in
 #define SHIMMER_S 3.1f
 int  shimmer_length(void);
 bool shimmer_render(int16_t *out, int n);
+
+/* the hologram's quiet background while BrainBox is open: a low, warm chord
+ * breathing slowly, a faint hum and a few faint glassy notes, rounded soft.
+ * One loop (it joins seamlessly), and soft far-off bell notes to play over it
+ * now and then (which: 0..AMB_BELLS-1). */
+#define AMB_RATE 8000
+#define AMB_S 16
+#define AMB_BELLS 3
+int  ambience_length(void);
+bool ambience_render(int16_t *out, int n);
+int  amb_bell_length(void);
+bool amb_bell_render(int16_t *out, int n, int which);

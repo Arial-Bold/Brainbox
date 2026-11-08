@@ -144,3 +144,68 @@ bool shimmer_render(int16_t *out, int n) {
     free(y);
     return true;
 }
+
+/* ------------------------------------------------------- the background */
+
+/* Every tone has a whole number of cycles in the loop (frequencies in
+ * sixteenths of a hertz, for a 16 second loop), so it joins without a seam;
+ * the softening filter is run round the loop twice for the same reason. */
+int ambience_length(void) { return AMB_S * AMB_RATE; }
+
+bool ambience_render(int16_t *out, int n) {
+    float *y = malloc(sizeof(float) * n);
+    if (!y) return false;
+    const float SR = AMB_RATE, L = AMB_S;
+    /* the chord: G and D, low (two of each a shade apart, so they beat slowly) */
+    static const float pad[5][3] = { { 98.0f, 0.5f, 0.3f }, { 98.125f, 0.4f, 2.1f }, { 146.8125f, 0.45f, 4.0f },
+                                     { 146.6875f, 0.3f, 1.2f }, { 196.0f, 0.18f, 5.3f } };
+    /* the faint glassy notes: pitch, how slowly each fades in and out, where it starts */
+    static const float shim[4][3] = { { 659.25f, 0.0625f, 0.4f }, { 783.9375f, 0.125f, 2.2f },
+                                      { 880.0f, 0.1875f, 4.1f }, { 1046.5f, 0.25f, 5.5f } };
+    for (int i = 0; i < n; i++) {
+        float t = i / SR, p = 0, sh = 0;
+        for (int k = 0; k < 5; k++) p += pad[k][1] * sinf(2 * PI * pad[k][0] * t + pad[k][2]);
+        p *= 0.75f + 0.25f * sinf(2 * PI * t / L);   /* breathing, once a loop */
+        for (int k = 0; k < 4; k++) {
+            float tw = 0.5f + 0.5f * sinf(2 * PI * shim[k][1] * t + shim[k][2]);
+            tw *= tw;
+            sh += sinf(2 * PI * shim[k][0] * t) * tw * tw;
+        }
+        y[i] = 0.75f / 1.5f * p + 0.15f * sinf(2 * PI * 55.0f * t) + 0.05f / 2.0f * sh;
+    }
+    /* softened twice over (round the loop, twice each) */
+    float a = expf(-2 * PI * 900.0f / SR);
+    for (int f = 0; f < 2; f++) {
+        float z = 0;
+        for (int pass = 0; pass < 2; pass++)
+            for (int i = 0; i < n; i++) { z = a * z + (1 - a) * y[i]; if (pass) y[i] = z; }
+    }
+    float peak = 1e-6f;
+    for (int i = 0; i < n; i++) if (fabsf(y[i]) > peak) peak = fabsf(y[i]);
+    float k = 0.9f * 32767 / peak;
+    for (int i = 0; i < n; i++) out[i] = (int16_t)lrintf(y[i] * k);
+    free(y);
+    return true;
+}
+
+int amb_bell_length(void) { return 2 * AMB_RATE; }
+
+/* one soft bell note, far off (a ninth as loud as the background at its fullest) */
+bool amb_bell_render(int16_t *out, int n, int which) {
+    static const float notes[AMB_BELLS] = { 392.0f, 587.3f, 784.0f };
+    const float SR = AMB_RATE, f = notes[which % AMB_BELLS];
+    float a = expf(-2 * PI * 1200.0f / SR), z = 0, peak = 1e-6f;
+    float *y = malloc(sizeof(float) * n);
+    if (!y) return false;
+    for (int i = 0; i < n; i++) {
+        float t = i / SR;
+        float v = sinf(2 * PI * f * t) * expf(-t / 0.6f) * (t < 0.03f ? t / 0.03f : 1);
+        z = a * z + (1 - a) * v;
+        y[i] = z;
+        if (fabsf(z) > peak) peak = fabsf(z);
+    }
+    float k = 0.1f * 32767 / peak;
+    for (int i = 0; i < n; i++) out[i] = (int16_t)lrintf(y[i] * k);
+    free(y);
+    return true;
+}

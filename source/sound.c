@@ -75,6 +75,37 @@ static void synth_shimmer(void) {
 	shim_buf = buf;
 }
 
+/* the background, and its bell notes */
+static s16 *amb_buf, *bell_buf[AMB_BELLS];
+static u32 amb_bytes, bell_bytes;
+static AESNDPB *amb_voice, *bell_voice;
+static s16 *synth_pcm(int n, u32 *bytes_out) {
+	u32 bytes = ((u32)n * 2 + 31) & ~31u;
+	s16 *buf = memalign(32, bytes);
+	if (buf) memset(buf, 0, bytes);
+	*bytes_out = bytes;
+	return buf;
+}
+static void synth_ambience(void) {
+	u32 bytes;
+	for (int k = 0; k < AMB_BELLS && !synth_quit; k++) {
+		s16 *b = synth_pcm(amb_bell_length(), &bytes);
+		if (!b) return;
+		amb_bell_render(b, amb_bell_length(), k);
+		DCFlushRange(b, bytes);
+		bell_bytes = bytes;
+		__sync_synchronize();
+		bell_buf[k] = b;
+	}
+	s16 *b = synth_pcm(ambience_length(), &bytes);
+	if (!b) return;
+	if (!ambience_render(b, ambience_length())) { free(b); return; }
+	DCFlushRange(b, bytes);
+	amb_bytes = bytes;
+	__sync_synchronize();
+	amb_buf = b;
+}
+
 static void *synth_main(void *arg) {
 	(void)arg;
 	synth_holo();
@@ -83,6 +114,7 @@ static void *synth_main(void *arg) {
 	LWP_SetThreadPriority(LWP_GetSelf(), 30);   /* (behind his voice, too) */
 	for (unsigned k = 0; k < sizeof(synth_order) / sizeof(synth_order[0]) && !synth_quit; k++) synth(synth_order[k]);
 	if (!synth_quit) synth_shimmer();
+	if (!synth_quit) synth_ambience();
 	return NULL;
 }
 
@@ -108,6 +140,8 @@ void sound_init(void) {
 	AESND_Pause(false);
 	for (int i = 0; i < SFX_VOICES; i++) sfx_voice[i] = AESND_AllocateVoice(sfx_cb);
 	holo_voice = AESND_AllocateVoice(sfx_cb);
+	amb_voice = AESND_AllocateVoice(sfx_cb);
+	bell_voice = AESND_AllocateVoice(sfx_cb);
 	ready = true;
 	synth_started = thr_create(&synth_th, synth_main, NULL, 32 * 1024, 110);
 	if (!synth_started) synth_holo();
@@ -167,4 +201,40 @@ void sound_play_shimmer(void) {
 	u16 vol = (u16)(ui_set.voice_volume * 255 / UI_VOLUME_MAX);
 	AESND_SetVoiceVolume(holo_voice, vol, vol);
 	AESND_PlayVoice(holo_voice, VOICE_MONO16, shim_buf, shim_bytes, HOLO_RATE, 0, false);
+}
+
+/* ------------------------------------------------------- the background */
+
+void sound_ambience_tick(bool listening, bool talking) {
+	static bool playing;
+	static float level;      /* 0..1: faded in, dipped, quiet */
+	static u64 next_bell;
+	if (!ready || !amb_buf || !amb_voice) return;
+	u64 now = gettime();
+	if (!playing) {
+		if (!ui_intro_done()) return;
+		AESND_SetVoiceVolume(amb_voice, 0, 0);
+		AESND_PlayVoice(amb_voice, VOICE_MONO16, amb_buf, amb_bytes, AMB_RATE, 0, true);   /* (round and round) */
+		playing = true;
+		level = 0;
+		next_bell = now + secs_to_ticks(7 + rand() % 6);
+	}
+	/* where it's heading: silent while listening, low while he talks */
+	float target = listening ? 0 : talking ? 0.35f : 1;
+	float rate = listening ? 0.25f : target > level ? 0.012f : 0.05f;   /* (in slowly: about three seconds the first time) */
+	level += (target - level) * rate;
+	/* as loud as in the sample at Menu sounds 4; louder above, quieter below; off with them */
+	float base = ui_set.sound_volume * 0.125f;
+	if (base > 1) base = 1;
+	u16 vol = (u16)(255 * base * level);
+	AESND_SetVoiceVolume(amb_voice, vol, vol);
+	/* now and then, a soft bell note far off (not while he talks or listens) */
+	if (now >= next_bell) {
+		next_bell = now + secs_to_ticks(7 + rand() % 6);
+		int which = rand() % AMB_BELLS;
+		if (bell_voice && bell_buf[which] && !listening && !talking && level > 0.8f && vol > 0) {
+			AESND_SetVoiceVolume(bell_voice, vol, vol);
+			AESND_PlayVoice(bell_voice, VOICE_MONO16, bell_buf[which], bell_bytes, AMB_RATE, 0, false);
+		}
+	}
 }
