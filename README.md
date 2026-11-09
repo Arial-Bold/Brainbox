@@ -10,7 +10,7 @@ It runs on the GameCube only.
 
 ## Two holograms
 
-Settings > Hologram chooses who answers you: Professor Scotty, a kindly old Scottish professor, or Professor Penny, a bright young American professor and librarian with a bun and oversized round glasses. Each has a voice of their own, made on the GameCube with Flite (Scotty: the awb voice; Penny: the slt voice), and only the one in use is loaded. The voices are the two `.flitevox` files in the `brainbox` folder.
+Settings > Hologram chooses who answers you: Professor Scotty, a kindly old Scottish professor, or Dr. Brahms, a bright young American scholar and librarian with a bun and oversized round glasses. Each has a voice of their own, made on the GameCube with Flite (Scotty: the awb voice; Dr. Brahms: the slt voice), and only the one in use is loaded. The voices are the two `.flitevox` files in the `brainbox` folder.
 
 ## What you need
 
@@ -62,7 +62,7 @@ With Google Gemini signed in (Settings > Brain; it can be signed in alongside Gr
 - **Overscan**: pulls everything in from the edges if your TV cuts them off.
 - **Voice volume**: how loud he speaks, from Off to 10 (10 is a little louder than the voice as it's made).
 - **Menu sounds**: how loud the sounds are when you move and choose, from Off to 10. The hologram's quiet background sound (a soft, slowly breathing chord with the odd far-off bell, made on the GameCube like his voice) follows it too: it dips while he talks and goes silent while the microphone listens.
-- **Hologram**: Professor Scotty or Professor Penny.
+- **Hologram**: Professor Scotty or Dr. Brahms.
 - **Captions**: shows the answers in a bubble as they're spoken.
 - **Brain**: which AI he uses (Groq, Google Gemini, Claude or ChatGPT), and signing in to it.
 - **Updates**: opens Software Update, to see what's new in a newer BrainBox, install it and restart into it.
