@@ -200,6 +200,7 @@ static void *player_main(void *arg) {
 
 static char job[4096];
 static volatile u32 job_gen;
+static volatile u32 taken_gen;   /* the last one the speaking thread took up (or dropped) */
 static thr_mutex job_lock;
 
 /* the next sentence of text from *p into out (moves *p on); false at the end */
@@ -325,7 +326,7 @@ static void *talk_main(void *arg) {
             voice_check(voice_file, v != NULL);
             voice_missing = v == NULL;
             ready = v != NULL;
-            done_gen = job_gen;   /* (anything asked while it was changing: dropped) */
+            done_gen = taken_gen = job_gen;   /* (anything asked while it was changing: dropped) */
         }
         if (!ready || job_gen == done_gen) { thr_sleep_ms(20); continue; }
         thr_lock(&job_lock);
@@ -336,6 +337,7 @@ static void *talk_main(void *arg) {
         done_gen = g;
         cur_gen = g;
         making = true;
+        taken_gen = g;
         const char *p = text;
         total_chars = strlen(text);
         done_chars = 0;
@@ -433,5 +435,7 @@ void speech_stop(void) {
     thr_unlock(&job_lock);
 }
 
-bool speech_busy(void) { return making || wpos != rpos || level_now > 0; }
+/* (busy from the moment it's asked, not only once the speaking thread has
+ * taken it up: otherwise a line asked for this instant looks finished) */
+bool speech_busy(void) { return making || (ready && taken_gen != job_gen) || wpos != rpos || level_now > 0; }
 float speech_level(void) { return level_now; }
