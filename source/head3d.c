@@ -1377,14 +1377,22 @@ void head3d_view(float l, float t, float r, float b, bool depth_flip) {
 }
 
 /* the matrix for group g: its own movement, the reflection (if any), then the camera */
+#ifndef HER_SCALE
+#define HER_SCALE 1.15f
+#endif
+#ifndef HER_DROP
+#define HER_DROP 0.38f
+#endif
 static void group_mtx(int g, float mirror_y, Mtx m) {
     /* its movement: p' = A p + o */
     M3 A = { { { 1, 0, 0 }, { 0, 1, 0 }, { 0, 0, 1 } } };
     V3 o = v3(0, 0, 0);
     if (g == G_HEAD) {
         V3 c0 = v3(0, 0.2f, 0);
-        for (int i = 0; i < 3; i++) for (int j = 0; j < 3; j++) A.m[i][j] = head_rot.m[i][j] * 1.16f;
-        o = add(sub(c0, apply(&A, c0)), v3(0, -0.02f + head_bob, 0));
+        /* (hers is drawn a little bigger and lower, to stand as tall in the beam as he does) */
+        float k = who == 1 ? 1.16f * HER_SCALE : 1.16f, dy = who == 1 ? HER_DROP : 0;
+        for (int i = 0; i < 3; i++) for (int j = 0; j < 3; j++) A.m[i][j] = head_rot.m[i][j] * k;
+        o = add(sub(c0, apply(&A, c0)), v3(0, -0.02f + head_bob - dy, 0));
     } else if (g == G_GLOBE) {   /* turning about its centre, and bobbing */
         V3 c = GLOBE_C;
         A = globe_rot;
