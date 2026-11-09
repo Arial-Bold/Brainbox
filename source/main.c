@@ -26,7 +26,7 @@
 #include "net/update.h"
 #include "voicefetch.h"
 
-const char appversion[] = "v1.2";
+const char appversion[] = "v1.3";
 
 /* ---------------------------------------------------------------- input */
 
