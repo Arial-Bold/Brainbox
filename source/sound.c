@@ -223,9 +223,10 @@ void sound_ambience_tick(bool listening, bool talking) {
 	float target = listening ? 0 : talking ? 0.35f : 1;
 	float rate = listening ? 0.25f : target > level ? 0.012f : 0.05f;   /* (in slowly: about three seconds the first time) */
 	level += (target - level) * rate;
-	/* as loud as in the sample at Menu sounds 4; louder above, quieter below; off with them */
+	/* soft: a quarter as loud as the sample at Menu sounds 4; louder above, quieter below; off with them */
 	float base = ui_set.sound_volume * 0.125f;
 	if (base > 1) base = 1;
+	base *= 0.25f;
 	u16 vol = (u16)(255 * base * level);
 	AESND_SetVoiceVolume(amb_voice, vol, vol);
 	/* now and then, a soft bell note far off (not while he talks or listens) */

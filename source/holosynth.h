@@ -21,7 +21,10 @@ bool shimmer_render(int16_t *out, int n);
  * breathing slowly, a faint hum and a few faint glassy notes, rounded soft.
  * One loop (it joins seamlessly), and soft far-off bell notes to play over it
  * now and then (which: 0..AMB_BELLS-1). */
-#define AMB_RATE 8000
+/* (7992 a second, not 8000: so the loop is a whole number of the sound
+ * library's 576-sample pieces. It pads a part-filled last piece with
+ * silence, which was heard as a gap each time it went round.) */
+#define AMB_RATE 7992
 #define AMB_S 16
 #define AMB_BELLS 3
 int  ambience_length(void);
