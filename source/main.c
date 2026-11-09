@@ -745,29 +745,65 @@ static bool says(const char *q, const char *words) {
 	return strstr(t, words) != NULL;
 }
 
-static bool is_egg(const char *q) {
+static bool is_trek(const char *q) {
 	return says(q, "beam me up") || says(q, "more power") || says(q, "all shes got") || says(q, "warp speed");
 }
+static bool is_egg(const char *q) {
+	if (is_trek(q)) return true;
+	return ui_set.character == UI_CHAR_HER && (says(q, "end program") || says(q, "geordi") || says(q, "la forge"));
+}
+
+/* waits about n frames (a 60th of a second each), the stage still moving */
+static void wait_frames(int n) { for (int k = 0; k < n; k++) read_input(); }
 
 static bool easter_egg(const char *q) {
+	if (ui_set.character == UI_CHAR_HER) {
+		/* (the Star Trek ones are Professor Scotty's) */
+		if (is_trek(q)) {
+			say(q, "Sorry, wrong department! You'll want Engineering. Professor Scotty runs that deck.");
+			ui_chuckle();
+			return true;
+		}
+		/* "Computer, end program": she flickers out like a hologram switching off... and comes straight back */
+		if (says(q, "end program")) {
+			ui_layout(1);
+			ui_chat(q, "");
+			ui_intro_start();
+			sound_play_holo();
+			while (!ui_intro_done()) read_input();
+			say(q, "Nice try. I'm not that kind of hologram.");
+			ui_chuckle();
+			return true;
+		}
+		/* Geordi: the light catches her spectacles... */
+		if (says(q, "geordi") || says(q, "la forge")) {
+			ui_layout(1);
+			ui_chat(q, "");
+			ui_pose(1, 0, true);
+			wait_frames(30);
+			say(q, "Geordi? Hmm. If he had anything to do with making this hologram, he and I need to have a little talk.");
+			while (speech_busy()) read_input();
+			ui_pose(0, 0.6f, true);   /* (and it clears, with a smile) */
+			ui_chuckle();
+			return true;
+		}
+		return false;
+	}
 	if (says(q, "beam me up")) {
 		ui_layout(1);
-		say(q, ui_set.character == UI_CHAR_HER ? "Ooh, I've always wanted to try this! Hold still... energize!"
-		                                       : "Aye! Hold still now, this tickles a wee bit. Energizing!");
+		say(q, "Aye! Hold still now, this tickles a wee bit. Energizing!");
 		ui_chuckle();
 		while (speech_busy()) read_input();
 		ui_chat(q, "");
 		sound_play_shimmer();
 		ui_beam_away();
 		while (!ui_beam_done()) read_input();
-		say(q, ui_set.character == UI_CHAR_HER ? "And I'm back! Every atom in its place, I checked. Now, where were we?"
-		                                       : "There we are, all in one piece! Well, mostly. Now, where were we?");
+		say(q, "There we are, all in one piece! Well, mostly. Now, where were we?");
 		ui_chuckle();
 		return true;
 	}
-	if (says(q, "more power") || says(q, "all shes got") || says(q, "warp speed")) {
-		say(q, ui_set.character == UI_CHAR_HER ? "She's giving it all she's got! Any more and the poor thing will rattle apart!"
-		                                       : "I'm givin' her all she's got! Och, she cannae take much more!");
+	if (is_trek(q)) {
+		say(q, "I'm givin' her all she's got! Och, she cannae take much more!");
 		ui_chuckle();
 		return true;
 	}

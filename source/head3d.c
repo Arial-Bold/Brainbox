@@ -728,6 +728,76 @@ static void sculpt(void) {
 
 /* ------------------------------------------------------------ the professor */
 
+/* Her lenses as she thinks, the anime way: they catch the light and turn
+ * white, hiding her eyes, with a bright streak sweeping across them and a
+ * little star of light at the rim (when it first catches, then every few
+ * seconds). s: seconds since it caught. R, at: where the spectacles are. */
+static void lens_point(const M3 *R, V3 at, float cx, float x, float y, float z) {
+    V3 n = apply(R, v3(0, 0, -1));
+    vert(add(apply(R, v3(cx + x, y, z)), at), n);
+}
+static void glint(const M3 *R, V3 at, float s) {
+    const float RX = 0.168f, RY = 0.158f;   /* (just inside the rims) */
+    float ph = fmodf(s, 3.2f);              /* the streak and the star come round every 3.2 s */
+    float sweep = ph / 0.45f;               /* 0 .. 1 as the streak crosses */
+    for (int sx = -1; sx <= 1; sx += 2) {
+        float cx = 0.232f * sx;
+        /* the lens: pale blue-white, a little domed */
+        colour(0.60f, 0.76f, 0.98f, EMIS);
+        int base = nverts;
+        enum { NR = 6, NA = 24 };
+        for (int j = 0; j <= NR; j++)
+            for (int i = 0; i < NA; i++) {
+                float u = (float)j / NR, a = 6.2831853f * i / NA;
+                lens_point(R, at, cx, RX * u * cosf(a), RY * u * sinf(a), -0.004f - 0.012f * (1 - u * u));
+            }
+        grid(base, NA, NR + 1);
+        /* the streaks: a broad one and a thin one, slanting, swept across together */
+        if (sweep < 1) {
+            colour(1.0f, 1.0f, 1.0f, EMIS);
+            const float dx = 0.7071f, dy = 0.7071f;              /* (the streaks slant up to the right) */
+            for (int k = 0; k < 2; k++) {
+                float mid = -1.5f + 3.0f * sweep - k * 0.42f, half = k ? 0.06f : 0.17f;
+                float o0 = mid - half, o1 = mid + half;
+                if (o0 < -0.98f) o0 = -0.98f;
+                if (o1 > 0.98f) o1 = 0.98f;
+                if (o1 <= o0) continue;
+                enum { NO = 4, NL = 9 };
+                base = nverts;
+                for (int j = 0; j < NO; j++) {
+                    float o = o0 + (o1 - o0) * j / (NO - 1), len = sqrtf(1 - o * o) * 0.97f;
+                    for (int i = 0; i < NL; i++) {
+                        float l = -len + 2 * len * i / (NL - 1);
+                        float ux = (o + l) * dx, uy = (l - o) * dy;   /* across it, then along it (in a unit lens) */
+                        float r2 = ux * ux + uy * uy;
+                        lens_point(R, at, cx, RX * ux, RY * uy, -0.006f - 0.012f * (1 - r2) - 0.002f);
+                    }
+                }
+                grid_open(base, NL, NO);
+            }
+        }
+    }
+    /* the star of light: on the outer top of one lens, as the streak passes */
+    float st = ph < 0.6f ? sinf(3.1415927f * ph / 0.6f) : 0;
+    if (s < 0.6f) st *= 1.35f;   /* (the first catch: a bigger one) */
+    if (st > 0.02f) {
+        colour(1.0f, 1.0f, 1.0f, EMIS);
+        float cx = -0.232f - 0.10f, cy = 0.085f, size = 0.17f * st;
+        enum { NS = 32 };
+        int base = nverts;
+        lens_point(R, at, cx, 0, cy, -0.07f);
+        for (int i = 0; i < NS; i++) {
+            float a = 6.2831853f * i / NS + 0.3f * st;
+            float c = cosf(a * 2);                                 /* four long points... */
+            float r = size * (0.10f + 0.90f * powf(fabsf(c), 9)); /* ...thin between */
+            lens_point(R, at, cx, r * cosf(a), cy + r * sinf(a), -0.07f);
+        }
+        for (int i = 0; i < NS && ntris < MAXT; i++) {
+            tri[ntris][0] = base; tri[ntris][1] = base + 1 + i; tri[ntris][2] = base + 1 + (i + 1) % NS; ntris++;
+        }
+    }
+}
+
 /* The parts that never change shape (most of him) are made and lit once
  * (S); the moving ones (eyes, lids, brows, mouth, spectacles, bow tie, the
  * globe's rings, the scribble) every frame (D). How the whole head tilts and
@@ -778,6 +848,7 @@ static void build(const HeadPose *ps, bool S) {
         }
         /* big expressive eyebrows */
         float lift = 0.03f * talk + (sx > 0 ? 0.07f : -0.015f) * th + ps->brows * 0.04f;
+        if (who == 1) lift += (sx > 0 ? 0.03f : -0.01f) * th;   /* (hers: one arched right up, the other knit a little) */
         if (who == 1) {   /* hers: fine auburn arches */
             colour(0.55f, 0.22f, 0.14f, MATTE);
             V3 p[8]; float rad[8];
@@ -879,8 +950,8 @@ static void build(const HeadPose *ps, bool S) {
         enum { NL = 17 };
         V3 up[NL], lo[NL]; float ru[NL], rl[NL];
         for (int i = 0; i < NL; i++) {
-            float u = i / (float)(NL - 1), x = -0.09f + 0.18f * u;
-            float line = 0.145f + 2.4f * x * x;                          /* where they meet: the corners turned up */
+            float u = i / (float)(NL - 1), x = (-0.09f + 0.18f * u) * (1 - 0.12f * th) + 0.008f * th;
+            float line = 0.145f + 2.4f * x * x * (1 - 0.6f * th) + 0.10f * th * x;   /* where they meet: the corners turned up (thinking: pressed together, a little sideways) */
             float taper = sinf(3.1415927f * (0.03f + 0.94f * u));
             float bow = 0.004f * expf(-(fabsf(x) - 0.032f) * (fabsf(x) - 0.032f) / 0.0004f);   /* the two soft peaks of the upper lip */
             up[i] = surf(x, line + 0.011f * taper + bow, 0.012f);
@@ -908,16 +979,25 @@ static void build(const HeadPose *ps, bool S) {
         V3 b[5];
         for (int i = 0; i < 5; i++) { float u = i / 4.0f; b[i] = add(apply(&R, v3(-0.052f + 0.104f * u, 0.03f + 0.018f * sinf(3.1415927f * u), -0.01f)), at); }
         tube(b, 5, 0.012f, 6);
+        if (ps->think_t > 0.2f) glint(&R, at, ps->think_t - 0.2f);   /* thinking: the light catches them (the anime glasses glint) */
     }
     /* a string of pearls round her neck (it sways a little) */
     {
-        colour(0.96f, 0.95f, 0.92f, GLOSS);
         float sway = 0.03f * sinf(t * 2) + 0.06f * ps->chuckle;
-        for (int k = 0; k < 15; k++) {
-            float a = 3.1415927f * (0.12f + 0.76f * k / 14.0f) + sway;   /* round the front */
+        /* (fewer, smaller pearls, spaced out along a fine thread) */
+        enum { NP = 7, NT = 25 };
+        V3 th_[NT];
+        for (int k = 0; k < NT; k++) {
+            float a = 3.1415927f * (0.10f + 0.80f * k / (NT - 1.0f)) + sway;
+            th_[k] = v3(-cosf(a) * 0.20f, -0.10f - 0.05f * sinf(a), -sinf(a) * 0.20f + 0.09f);
+        }
+        colour(0.80f, 0.78f, 0.74f, MATTE); tube(th_, NT, 0.0045f, 4);
+        colour(0.96f, 0.95f, 0.92f, GLOSS);
+        for (int k = 0; k < NP; k++) {
+            float a = acosf((0.17f - 0.34f * k / (NP - 1.0f)) / 0.20f) + sway;   /* round the front, evenly spaced as you see them */
             float x = -cosf(a) * 0.20f, z = -sinf(a) * 0.20f + 0.09f;
             float y = -0.10f - 0.05f * sinf(a);
-            ell(x, y, z, 0.034f, 0.034f, 0.034f, 10, 6, NULL);
+            ell(x, y, z, 0.023f, 0.023f, 0.023f, 10, 6, NULL);
         }
     }
     }
@@ -1261,6 +1341,11 @@ void head3d_build(const HeadPose *ps) {
     build(ps, false);
     float t = ps->t, th = ps->think;
     head_rot = rotz(0.07f * th + 0.02f * sinf(t) + 0.03f * ps->chuckle * sinf(t * 18));
+    if (who == 1) {   /* hers: she looks down a little as she thinks (and the light catches her spectacles) */
+        M3 a = head_rot, b = rotx(-0.2f * th), c;
+        for (int i = 0; i < 3; i++) for (int j = 0; j < 3; j++) c.m[i][j] = a.m[i][0] * b.m[0][j] + a.m[i][1] * b.m[1][j] + a.m[i][2] * b.m[2][j];
+        head_rot = c;
+    }
     head_bob = 0.02f * sinf(t * 1.1f);
     globe_bob = 0.04f * sinf(t * 1.4f);
     {

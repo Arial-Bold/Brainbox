@@ -898,7 +898,7 @@ static void bloom(void) {
 /* ---------------------------------------------------- the professor's pose */
 
 static HeadPose pose;
-static float mouth, px_now = 320, think_now, brows_now, fog_now;
+static float mouth, px_now = 320, think_now, think_secs, brows_now, fog_now;
 static u32 blink_at, last_ms;
 
 static void pose_update(float t) {
@@ -919,6 +919,7 @@ static void pose_update(float t) {
 		if (k >= 1) { blink = 0; blink_at = now + 2000 + (now * 7919u) % 3500u; }
 	}
 	think_now += (sc.think - think_now) * clamp01(dt * 5);
+	think_secs = sc.think > 0.8f ? think_secs + dt : 0;   /* (properly thinking: not just foggy) */
 	brows_now += (sc.brows + (mouth > 0.3f ? 0.3f : 0) - brows_now) * clamp01(dt * 6);
 	fog_now += (sc.fog - fog_now) * clamp01(dt * 1.5f);
 	/* the panels on the right (choosing an AI, signing in): he steps over to the left, clear of them */
@@ -930,6 +931,7 @@ static void pose_update(float t) {
 	pose.talk = mouth;
 	pose.blink = blink;
 	pose.think = think_now;
+	pose.think_t = think_secs;
 	pose.brows = brows_now;
 	pose.chuckle = ch > 0 ? ch : 0;
 	pose.look_x = think_now > 0.3f ? 0.6f : 0.25f * sinf(t * 0.37f) * sinf(t * 0.23f);

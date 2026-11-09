@@ -9,6 +9,7 @@ typedef struct {
     float talk;       /* how open his mouth is, 0..1 (from his voice) */
     float blink;      /* 0 open .. 1 shut */
     float think;      /* 0 .. 1: spectacles down, one brow up, a glance up and aside */
+    float think_t;    /* seconds since he (or she) began thinking (0: not thinking) */
     float brows;      /* extra eyebrow lift (surprise, delight) */
     float chuckle;    /* 0..1: a little shake and the bow tie bouncing */
     float look_x;     /* eyes left (-1) .. right (1) */
