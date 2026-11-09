@@ -34,5 +34,7 @@ int  head3d_triangles(void);
 /* which hologram: 0 Professor Scotty, 1 her (made afresh at the next build) */
 void head3d_character(int c);
 int  head3d_get_character(void);
+/* whether hologram c has been made yet (the first time takes a moment: hers most of all) */
+bool head3d_made(int c);
 /* his colours are multiplied by this when drawn (white: as they are; a pale blue for a ghostly hologram) */
 void head3d_tint(u8 r, u8 g, u8 b);

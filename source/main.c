@@ -14,6 +14,7 @@
 #include <string.h>
 #include <strings.h>
 #include "ui.h"
+#include "head3d.h"
 #include "ai.h"
 #include "speech.h"
 #include "sound.h"
@@ -1099,6 +1100,10 @@ int main(int argc, char **argv) {
 	bool skip = (PAD_ButtonsHeld(0) & PAD_TRIGGER_Z) != 0;
 	if (ui_set.intro && !skip) {
 		for (int k = 0; k < 240 && !sound_holo_ready(); k++) read_input();
+		/* (and the hologram itself: the one chosen in Settings is made once the
+		 * settings are read, which takes a moment, so the opening waits for it
+		 * rather than playing to an empty beam) */
+		for (int k = 0; k < 900 && !head3d_made(ui_set.character); k++) read_input();
 		ui_intro_start();
 		sound_play_holo();
 		while (!ui_intro_done()) read_input();
