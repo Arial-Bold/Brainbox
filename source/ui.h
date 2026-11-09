@@ -14,7 +14,7 @@
 
 /* the holograms: Professor Scotty, and her (each with a voice of its own) */
 enum { UI_CHAR_SCOTTY, UI_CHAR_HER, UI_CHARS };
-#define UI_HER_NAME "Professor Penny"   /* (her name: in one place, so it's easy to change) */
+#define UI_HER_NAME "Dr. Brahms"   /* (her name: in one place, so it's easy to change) */
 const char *ui_char_name(int c);        /* "Professor Scotty" / UI_HER_NAME */
 
 enum { UI_RES_AUTO, UI_RES_480I, UI_RES_480P, UI_RES_COUNT };
