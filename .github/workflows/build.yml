@@ -24,6 +24,7 @@ jobs:
           mkdir -p package/brainbox
           cp brainbox_GC.dol package/brainbox/default.dol
           cp dist/cacert.pem package/brainbox/cacert.pem
+          cp dist/voice_scotty.flitevox dist/voice_her.flitevox package/brainbox/
           if [ -f dist/opening.bnr ]; then cp dist/opening.bnr package/brainbox/opening.bnr; fi
 
       - name: Upload result
