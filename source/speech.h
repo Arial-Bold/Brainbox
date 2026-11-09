@@ -13,6 +13,7 @@ bool speech_ready(void);          /* Flite has started, with a voice */
  * goes false until it's in). speech_voice_missing: it couldn't be loaded. */
 void speech_voice(const char *path);
 bool speech_voice_missing(void);
+const char *speech_voice_problem(void);   /* why ("isn't there", "couldn't be loaded") */
 void speech_say(const char *text);/* says text (CP-1252), cutting off anything he was saying */
 void speech_stop(void);           /* stops talking */
 bool speech_busy(void);           /* still making or playing speech */

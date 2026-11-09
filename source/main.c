@@ -24,6 +24,7 @@
 #include "net/storage.h"
 #include "net/qrcodegen.h"
 #include "net/update.h"
+#include "voicefetch.h"
 
 const char appversion[] = "v1.2";
 
@@ -158,11 +159,46 @@ static void say(const char *you, const char *him) {
 }
 
 /* the hologram in use: its voice (a file beside the app) and how the AI talks */
+static const char *voice_name(void) {
+	return ui_set.character == UI_CHAR_HER ? "voice_her.flitevox" : "voice_scotty.flitevox";
+}
+
 static void use_character(void) {
 	char path[300];
-	storage_path(path, sizeof(path), ui_set.character == UI_CHAR_HER ? "voice_her.flitevox" : "voice_scotty.flitevox");
+	storage_path(path, sizeof(path), voice_name());
 	speech_voice(path);
 	ai_set_character(ui_set.character);
+}
+
+/* Waits for the hologram's voice. If its file isn't beside the app (an update
+ * from inside an older version brings the program but not the voices), or it
+ * won't load, it's fetched from GitHub and loaded. */
+static void ensure_voice(void) {
+	for (int k = 0; k < 900 && !speech_ready() && !speech_voice_missing(); k++) read_input();
+	if (!speech_voice_missing()) return;
+	char path[300], m[200];
+	storage_path(path, sizeof(path), voice_name());
+	voicefetch_start(voice_name(), path);
+	while (voicefetch_state() == VF_WORKING) {
+		int p = voicefetch_percent();
+		if (p >= 0) snprintf(m, sizeof(m), "Fetching %s's voice from GitHub\x85 %d%%", ui_char_name(ui_set.character), p);
+		else snprintf(m, sizeof(m), "Fetching %s's voice from GitHub\x85", ui_char_name(ui_set.character));
+		ui_caption(UI_CAP_INFO, m);
+		read_input();
+	}
+	if (voicefetch_state() == VF_DONE) {
+		ui_caption(UI_CAP_INFO, "Warming up\x85");
+		speech_voice(path);   /* (tried again) */
+		for (int k = 0; k < 900 && !speech_ready() && !speech_voice_missing(); k++) read_input();
+	}
+	ui_caption(UI_CAP_NONE, "");
+	if (speech_voice_missing()) {
+		if (voicefetch_state() == VF_FAILED)
+			snprintf(m, sizeof(m), "%s %s, and it couldn't be fetched: %s", voice_name(), speech_voice_problem(), voicefetch_error());
+		else
+			snprintf(m, sizeof(m), "%s %s", voice_name(), speech_voice_problem());
+		ui_toast(m);
+	}
 }
 
 static void use_brain(void) {
@@ -661,6 +697,7 @@ static void settings(void) {
 	}
 	if (memcmp(&before, &ui_set, sizeof(ui_set))) save_settings();
 	ui_screen(UI_STAGE);
+	if (ui_set.character != before.character) ensure_voice();   /* (someone new: their voice) */
 	wait_release();
 }
 
@@ -1032,12 +1069,9 @@ int main(int argc, char **argv) {
 	} else ui_intro_skip();
 	update_request_check(true);   /* (quietly: it says so only if there's a new version) */
 	/* his voice starts in the background too (a second or so: usually ready by now) */
-	if (!speech_ready()) {
-		ui_caption(UI_CAP_INFO, "Warming up\x85");
-		for (int k = 0; k < 600 && !speech_ready() && !speech_voice_missing(); k++) read_input();
-		ui_caption(UI_CAP_NONE, "");
-	}
-	if (speech_voice_missing()) ui_toast("The voice file is missing from the brainbox folder: reinstall BrainBox.");
+	if (!speech_ready()) ui_caption(UI_CAP_INFO, "Warming up\x85");
+	ensure_voice();
+	ui_caption(UI_CAP_NONE, "");
 	if (!storage_ok()) ui_toast("There's no SD card: settings won't be kept.");
 
 	if (!ui_set.key[ui_set.brain][0]) {

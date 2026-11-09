@@ -15,6 +15,7 @@
 #include "speech.h"
 #include "ui.h"
 #include "net/thr.h"
+#include "net/storage.h"
 #include "flite.h"
 #include "saywords.h"
 #include <gccore.h>
@@ -34,6 +35,27 @@
 static char voice_file[300];
 static volatile u32 voice_req;   /* bumped when the voice to use changes */
 static volatile bool voice_missing;
+static char voice_problem[200];   /* what went wrong loading it (for the message, and voice.txt) */
+
+/* Notes how loading the voice went in voice.txt beside the app (so a problem
+ * on someone's console can be found), and returns whether the file is there. */
+static bool voice_check(const char *path, bool loaded) {
+    FILE *f = fopen(path, "rb");
+    bool there = f != NULL;
+    long size = -1;
+    unsigned char head[24] = { 0 };
+    if (f) { fread(head, 1, sizeof(head), f); fseek(f, 0, SEEK_END); size = ftell(f); fclose(f); }
+    if (!there) snprintf(voice_problem, sizeof(voice_problem), "isn't in the brainbox folder");
+    else if (!loaded) snprintf(voice_problem, sizeof(voice_problem), "is there (%ld bytes) but couldn't be loaded", size);
+    else voice_problem[0] = 0;
+    char note[600], out[300];
+    int n = snprintf(note, sizeof(note), "voice: %s\nfile: %s (%ld bytes)\nloaded: %s\nfirst bytes:", path, there ? "found" : "NOT FOUND", size, loaded ? "yes" : "no");
+    for (int i = 0; i < 24 && there && n < (int)sizeof(note) - 4; i++) n += snprintf(note + n, sizeof(note) - n, " %02x", head[i]);
+    if (n < (int)sizeof(note) - 2) { note[n++] = '\n'; note[n] = 0; }
+    storage_path(out, sizeof(out), "voice.txt");
+    storage_write_atomic(out, note, strlen(note));
+    return there;
+}
 void usenglish_init(cst_voice *v);
 cst_lexicon *cmulex_init(void);
 extern jmp_buf *cst_errjmp;
@@ -300,6 +322,7 @@ static void *talk_main(void *arg) {
                 feat_set(v->features, "streaming_info", audio_streaming_info_val(asi));
             }
             voice = v;
+            voice_check(voice_file, v != NULL);
             voice_missing = v == NULL;
             ready = v != NULL;
             done_gen = job_gen;   /* (anything asked while it was changing: dropped) */
@@ -379,10 +402,11 @@ void speech_init(void) {
 
 bool speech_ready(void) { return ready; }
 bool speech_voice_missing(void) { return voice_missing; }
+const char *speech_voice_problem(void) { return voice_problem; }
 
 void speech_voice(const char *path) {
     thr_lock(&job_lock);
-    if (strcmp(voice_file, path)) {
+    if (strcmp(voice_file, path) || voice_missing) {   /* (the same one again: tried again, if it was missing) */
         snprintf(voice_file, sizeof(voice_file), "%s", path);
         gen++;
         drop_queued();
