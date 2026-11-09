@@ -1,9 +1,5 @@
 # BrainBox
 
-
-<img width="640" height="480" alt="screenshot0" src="https://github.com/user-attachments/assets/4538e0ad-f67e-4a3d-b126-e9d8358c2791" />
-
-
 BrainBox puts Professor Scotty, a kindly old hologram professor, in your GameCube. Ask him anything by talking into the GameCube Microphone or typing on the keyboard controller, and he answers out loud, floating in a beam of light, using the AI of your choice: open models on **Groq** (Llama and others), **Google Gemini**, **Claude** or **ChatGPT**.
 
 - He's drawn in 3D on the GameCube's own graphics chip, as one smoothly sculpted head: soft lighting, a hologram shimmer, a glow, sparkles and a reflection on the floor. He blinks, raises his eyebrows, puts his spectacles on to think, and his mouth moves with his voice.
@@ -11,6 +7,10 @@ BrainBox puts Professor Scotty, a kindly old hologram professor, in your GameCub
 - The AI is reached directly over HTTPS through the network adapter, with your own API key.
 
 It runs on the GameCube only.
+
+## Two holograms
+
+Settings > Hologram chooses who answers you: Professor Scotty, a kindly old Scottish professor, or Professor Penny, a bright young American professor and librarian with a bun and oversized round glasses. Each has a voice of their own, made on the GameCube with Flite (Scotty: the awb voice; Penny: the slt voice), and only the one in use is loaded. The voices are the two `.flitevox` files in the `brainbox` folder.
 
 ## What you need
 
@@ -23,10 +23,9 @@ It runs on the GameCube only.
 
 ## Installing
 
-Download `brainbox.zip` from the Releases page and copy the `brainbox` folder in it to your SD card, where your Launcher looks for apps. It holds `default.dol` and `cacert.pem` (the certificates the secure connection is checked with).
+Download `brainbox.zip` from the Releases page and copy the `brainbox` folder in it to your SD card, where your Launcher looks for apps. It holds `default.dol`, `cacert.pem` (the certificates the secure connection is checked with) and the two voices, `voice_scotty.flitevox` and `voice_her.flitevox`.
 
 ## Signing in
-
 
 The first time, the professor's head is a little foggy: he needs a brain. Choose Groq, Google Gemini, Claude or ChatGPT, and a sign-in page appears with a QR code. Scan it with your phone (or open the address on a computer on the same network). The page links to that company's own site, where you sign in with your account and make an API key; paste the key into the page and press Send. You can also type the key with the keyboard controller (Y).
 
@@ -34,12 +33,13 @@ The GameCube's clock is set from the internet first (secure connections need the
 
 ## Talking to him
 
-<img width="640" height="480" alt="screenshot1" src="https://github.com/user-attachments/assets/d5af5b29-2b44-46a8-8071-4842f7eeb884" />
-
-
 With the microphone in a memory card slot, hold the button on the microphone (or A on the controller), ask your question, and let go. What you said goes to the AI to be written down (it shows in the "You" bubble), then on to him as the question. Up to 15 seconds at a time. While the microphone is being tried out, the last recording is kept as `heard.wav` beside the app, with a few details about it in `mic.txt`.
 
 Groq, Google Gemini and ChatGPT can listen. When Groq is signed in, it always does the listening (with Whisper, which is quick and free), whichever AI answers. Claude can't take sound, so if Claude is his brain, also sign in to Groq (Settings > Brain, then switch back to Claude): Groq writes down what you say, and Claude answers.
+
+## Looking things up
+
+With Google Gemini signed in (Settings > Brain; it can be signed in alongside Groq, whichever AI is his brain), Professor Scotty can look things up with Google Search when a question needs today's information: news, recent events, scores, prices, the weather. His brain decides when; while he searches, the bar says "Let me look that up on the web", and his answer starts with something like "According to Google". The searches use Gemini 2.5 Flash, which includes up to 500 searches a day on Google's free allowance. `chat.web_search=0` in `brainbox.ini` turns this off.
 
 ## Controls
 
@@ -56,29 +56,26 @@ Groq, Google Gemini and ChatGPT can listen. When Groq is signed in, it always do
 
 ## Settings
 
-<img width="640" height="480" alt="screenshot2" src="https://github.com/user-attachments/assets/43665a05-a9f8-4cd7-ae7a-601a0b8cfbb9" />
-
-
 - **Resolution**: Auto (480p with a component cable), 480i or 480p. A new resolution goes back to the old one after 10 seconds unless you press A.
 - **Screen**: 4:3, or 16:9 if your TV stretches the picture to fill a widescreen.
 - **Picture width**: Full uses the whole width of the TV picture; Standard leaves a border.
 - **Overscan**: pulls everything in from the edges if your TV cuts them off.
 - **Voice volume**: how loud he speaks, from Off to 10 (10 is a little louder than the voice as it's made).
-- **Menu sounds**: how loud the sounds are when you move and choose, from Off to 10.
-- **Captions**: shows his answers in a bubble as he speaks.
+- **Menu sounds**: how loud the sounds are when you move and choose, from Off to 10. The hologram's quiet background sound (a soft, slowly breathing chord with the odd far-off bell, made on the GameCube like his voice) follows it too: it dips while he talks and goes silent while the microphone listens.
+- **Hologram**: Professor Scotty or Professor Penny.
+- **Captions**: shows the answers in a bubble as they're spoken.
 - **Brain**: which AI he uses (Groq, Google Gemini, Claude or ChatGPT), and signing in to it.
-- **Updates**: checks for a newer BrainBox and installs it.
+- **Updates**: opens Software Update, to see what's new in a newer BrainBox, install it and restart into it.
 - **Launcher**: which .dol at the root of the SD card Exit to Launcher starts.
 - **Exit to Launcher**: leaves BrainBox.
 
-A few more can be set by hand in `brainbox.ini`: `groq.model`, `gemini.model`, `claude.model` and `openai.model` choose a different model for each service (empty for the usual one), `display.glow=0` turns the glow off, and `display.intro=0` skips the opening (Professor Scotty switching on as a hologram, with its sound). Holding Z as BrainBox starts skips it just that once.
+A few more can be set by hand in `brainbox.ini`: `groq.model`, `gemini.model`, `claude.model` and `openai.model` choose a different model for each service (empty for the usual one), `display.glow=0` turns the glow off, `chat.web_search=0` stops him looking things up with Google, and `display.intro=0` skips the opening (Professor Scotty switching on as a hologram, with its sound). Holding Z as BrainBox starts skips it just that once.
 
 ## Updates
 
+BrainBox checks GitHub quietly when it starts, and if there's a newer version it says so. Settings > Updates opens the Software Update window: it checks again, shows what's new in the newest version (the notes from its GitHub release), and installs it with Install: it's downloaded and unpacked on the SD card, then replaces this one (your settings and keys are kept). Restart Now starts the new version straight away. An install carries on if you close the window, and the Updates row shows how it's going. The version it replaced is removed the next time BrainBox starts.
 
-BrainBox checks GitHub quietly when it starts, and if there's a newer version it says so. Settings > Updates checks again, and installs the new version with A: it's downloaded and unpacked on the SD card, then replaces this one (your settings and keys are kept), and A again restarts into it. The version it replaced is removed the next time BrainBox starts.
-
-Each release on GitHub has `brainbox.zip` attached, holding the `brainbox` folder (`default.dol`, `opening.bnr` and `cacert.pem`).
+Each release on GitHub has `brainbox.zip` attached, holding the `brainbox` folder (`default.dol`, `opening.bnr`, `cacert.pem` and the two voice files).
 
 If you used it before it was called BrainBox, its settings are carried over from `pixel.ini` the first time.
 
@@ -102,6 +99,6 @@ Every push to GitHub builds it too (see the Actions tab), and the result is a zi
 - [QR Code generator library](https://www.nayuki.io/page/qr-code-generator-library): Project Nayuki (MIT)
 - The globe's map: drawn from the [world.geo.json](https://github.com/johan/world.geo.json) country outlines (public domain)
 
-BrainBox's own code is under the MIT License (see `LICENSE`).
+BrainBox's own code is under the MIT License (see `LICENSE`). The notices for the software and data above that are built into BrainBox are in `THIRD_PARTY_NOTICES.md`.
 
 BrainBox isn't affiliated with Groq, Meta, Google, Anthropic, OpenAI or Nintendo.

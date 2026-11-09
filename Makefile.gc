@@ -30,16 +30,6 @@ FLITE_FILES	:=	third_party/flite/src/audio/au_none.c \
 			third_party/flite/src/audio/au_streaming.c \
 			third_party/flite/src/audio/audio.c \
 			third_party/flite/src/utils/cst_alloc.c \
-			third_party/flite/lang/cmu_us_awb/cmu_us_awb.c \
-			third_party/flite/lang/cmu_us_awb/cmu_us_awb_cg.c \
-			third_party/flite/lang/cmu_us_awb/cmu_us_awb_cg_durmodel.c \
-			third_party/flite/lang/cmu_us_awb/cmu_us_awb_cg_f0_trees.c \
-			third_party/flite/lang/cmu_us_awb/cmu_us_awb_cg_phonestate.c \
-			third_party/flite/lang/cmu_us_awb/cmu_us_awb_cg_single_mcep_trees.c \
-			third_party/flite/lang/cmu_us_awb/cmu_us_awb_cg_single_params.c \
-			third_party/flite/lang/cmu_us_awb/cmu_us_awb_spamf0_accent.c \
-			third_party/flite/lang/cmu_us_awb/cmu_us_awb_spamf0_accent_params.c \
-			third_party/flite/lang/cmu_us_awb/cmu_us_awb_spamf0_phrase.c \
 			third_party/flite/lang/cmulex/cmu_lex.c \
 			third_party/flite/lang/cmulex/cmu_lex_data.c \
 			third_party/flite/lang/cmulex/cmu_lex_entries.c \
