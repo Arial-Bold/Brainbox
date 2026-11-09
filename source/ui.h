@@ -12,6 +12,11 @@
 
 /* ---------------------------------------------------------------- settings */
 
+/* the holograms: Professor Scotty, and her (each with a voice of its own) */
+enum { UI_CHAR_SCOTTY, UI_CHAR_HER, UI_CHARS };
+#define UI_HER_NAME "Professor Penny"   /* (her name: in one place, so it's easy to change) */
+const char *ui_char_name(int c);        /* "Professor Scotty" / UI_HER_NAME */
+
 enum { UI_RES_AUTO, UI_RES_480I, UI_RES_480P, UI_RES_COUNT };
 #define UI_OVERSCAN_MAX 10
 #define UI_VOLUME_MAX 10
@@ -35,6 +40,7 @@ typedef struct {
 	int fps;          /* 1 = frames a second shown in the corner (display.fps=1 in brainbox.ini) */
 	int intro;        /* 1 = the opening (him switching on) when BrainBox starts (display.intro=0 in brainbox.ini: off) */
 	int web_search;   /* 1 = he looks things up with Google when he needs to (needs Gemini signed in; chat.web_search=0 in brainbox.ini: off) */
+	int character;    /* which hologram: UI_CHAR_SCOTTY or UI_CHAR_HER (chat.hologram in brainbox.ini) */
 } UiSettings;
 
 extern UiSettings ui_set;

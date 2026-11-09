@@ -409,8 +409,8 @@ static void do_install(void) {
      * never at the root of the card */
     char rel[420];
     release_dir(dir, rel, sizeof(rel));
-    static const char *const extras[] = { "cacert.pem" };
-    for (int i = 0; i < 1 && !bare_dol; i++) {
+    static const char *const extras[] = { "cacert.pem", "voice_scotty.flitevox", "voice_her.flitevox" };
+    for (int i = 0; i < 3 && !bare_dol; i++) {
         char from[600], to[400], tmp[420];
         snprintf(from, sizeof(from), "%s/%s", rel, extras[i]);
         storage_path(to, sizeof(to), extras[i]);

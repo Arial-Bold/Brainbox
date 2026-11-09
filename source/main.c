@@ -157,6 +157,14 @@ static void say(const char *you, const char *him) {
 	speech_say(him);
 }
 
+/* the hologram in use: its voice (a file beside the app) and how the AI talks */
+static void use_character(void) {
+	char path[300];
+	storage_path(path, sizeof(path), ui_set.character == UI_CHAR_HER ? "voice_her.flitevox" : "voice_scotty.flitevox");
+	speech_voice(path);
+	ai_set_character(ui_set.character);
+}
+
 static void use_brain(void) {
 	int b = ui_set.brain;
 	ai_set((AiBrain)b, ui_set.key[b], ui_set.model[b]);
@@ -293,7 +301,9 @@ static bool choose_brain(void) {
 	int row = 0;
 	for (int i = 0; i < AI_COUNT; i++) if (order[i] == ui_set.brain) row = i;
 	for (;;) {
-		ui_overlay(UI_OVERLAY_BRAIN, "Which AI should Professor Scotty use?");
+		static char t[80];
+		snprintf(t, sizeof(t), "Which AI should %s use?", ui_char_name(ui_set.character));
+		ui_overlay(UI_OVERLAY_BRAIN, t);
 		for (int i = 0; i < AI_COUNT; i++) {
 			AiBrain b = order[i];
 			bool free_ = b == AI_GROQ || b == AI_GEMINI;
@@ -357,7 +367,7 @@ static bool choose_brain(void) {
 
 /* ----------------------------------------------------------- Settings */
 
-enum { S_RES, S_SCREEN, S_WIDTH, S_OVERSCAN, S_VOICE, S_SOUNDS, S_CAPTIONS, S_BRAIN, S_UPDATES, S_LAUNCHER, S_EXIT, S_ROWS };
+enum { S_RES, S_SCREEN, S_WIDTH, S_OVERSCAN, S_HOLOGRAM, S_VOICE, S_SOUNDS, S_CAPTIONS, S_BRAIN, S_UPDATES, S_LAUNCHER, S_EXIT, S_ROWS };
 
 /* the Updates row: how it's going */
 static const char *updates_value(void) {
@@ -395,6 +405,7 @@ static void settings_rows(void) {
 	ui_overlay_row(S_OVERSCAN, "Overscan", ov);
 	ui_overlay_row(S_VOICE, "Voice volume", vv);
 	ui_overlay_row(S_SOUNDS, "Menu sounds", sv);
+	ui_overlay_row(S_HOLOGRAM, "Hologram", ui_char_name(ui_set.character));
 	ui_overlay_row(S_CAPTIONS, "Captions", ui_set.captions ? "On" : "Off");
 	ui_overlay_row(S_BRAIN, "Brain", br);
 	ui_overlay_row(S_UPDATES, "Updates", updates_value());
@@ -409,7 +420,8 @@ static void settings_help(int row) {
 		{ "Screen", "Choose 16:9 if your TV stretches the picture to fill the screen." },
 		{ "Picture width", "Full fills the width of the TV picture. Standard leaves a border." },
 		{ "Overscan", "Pulls everything in from the edges if your TV cuts them off." },
-		{ "Voice volume", "How loud Professor Scotty speaks. Off for none." },
+		{ "Hologram", "Who answers you: Professor Scotty, or " UI_HER_NAME ". Each has a voice of their own." },
+		{ "Voice volume", "How loud the hologram speaks. Off for none." },
 		{ "Menu sounds", "How loud the sounds are when you move and choose. Off for none." },
 		{ "Captions", "Shows his answers in a bubble as he speaks." },
 		{ "Brain", "Which AI he uses: Groq, Google Gemini, Claude or ChatGPT. A to change or sign in." },
@@ -626,6 +638,12 @@ static void settings(void) {
 			sound_play(SFX_CONFIRM);
 			break;
 		case S_CAPTIONS: ui_set.captions ^= 1; break;
+		case S_HOLOGRAM:
+			ui_set.character = (ui_set.character + UI_CHARS + d) % UI_CHARS;
+			use_character();
+			ai_forget();   /* (a new conversation, with someone new) */
+			ui_chat("", "");
+			break;
 		case S_LAUNCHER: {
 			static char names[48][64];
 			int n = launcher_list(names, 48), cur = -1;
@@ -697,19 +715,22 @@ static bool is_egg(const char *q) {
 static bool easter_egg(const char *q) {
 	if (says(q, "beam me up")) {
 		ui_layout(1);
-		say(q, "Aye! Hold still now, this tickles a wee bit. Energizing!");
+		say(q, ui_set.character == UI_CHAR_HER ? "Ooh, I've always wanted to try this! Hold still... energize!"
+		                                       : "Aye! Hold still now, this tickles a wee bit. Energizing!");
 		ui_chuckle();
 		while (speech_busy()) read_input();
 		ui_chat(q, "");
 		sound_play_shimmer();
 		ui_beam_away();
 		while (!ui_beam_done()) read_input();
-		say(q, "There we are, all in one piece! Well, mostly. Now, where were we?");
+		say(q, ui_set.character == UI_CHAR_HER ? "And I'm back! Every atom in its place, I checked. Now, where were we?"
+		                                       : "There we are, all in one piece! Well, mostly. Now, where were we?");
 		ui_chuckle();
 		return true;
 	}
 	if (says(q, "more power") || says(q, "all shes got") || says(q, "warp speed")) {
-		say(q, "I'm givin' her all she's got! Och, she cannae take much more!");
+		say(q, ui_set.character == UI_CHAR_HER ? "She's giving it all she's got! Any more and the poor thing will rattle apart!"
+		                                       : "I'm givin' her all she's got! Och, she cannae take much more!");
 		ui_chuckle();
 		return true;
 	}
@@ -991,6 +1012,7 @@ int main(int argc, char **argv) {
 		ui_settings_load();
 	}
 	if (storage_ok()) update_remove_old();   /* (the version an update replaced, now this one has started) */
+	use_character();   /* (the hologram's voice, loaded in the background) */
 	use_brain();
 	ai_hear_filter(is_egg);   /* (his little secrets aren't sent on to the AI) */
 	ai_warm_up();   /* the network and the clock, while he switches on */
@@ -1012,9 +1034,10 @@ int main(int argc, char **argv) {
 	/* his voice starts in the background too (a second or so: usually ready by now) */
 	if (!speech_ready()) {
 		ui_caption(UI_CAP_INFO, "Warming up\x85");
-		for (int k = 0; k < 600 && !speech_ready(); k++) read_input();
+		for (int k = 0; k < 600 && !speech_ready() && !speech_voice_missing(); k++) read_input();
 		ui_caption(UI_CAP_NONE, "");
 	}
+	if (speech_voice_missing()) ui_toast("The voice file is missing from the brainbox folder: reinstall BrainBox.");
 	if (!storage_ok()) ui_toast("There's no SD card: settings won't be kept.");
 
 	if (!ui_set.key[ui_set.brain][0]) {
@@ -1040,7 +1063,10 @@ int main(int argc, char **argv) {
 		ui_chuckle();
 		say("", ai_state() == AI_DONE ? ai_answer() : "Ah! That's much better. Ask me anything!");
 	} else {
-		say("", "Hello there! I'm Professor Scotty. What would you like to know today?");
+		char hello[160];
+		snprintf(hello, sizeof(hello), ui_set.character == UI_CHAR_HER ? "Hi there! I'm %s. What would you like to know today?"
+		                                                                 : "Hello there! I'm %s. What would you like to know today?", ui_char_name(ui_set.character));
+		say("", hello);
 	}
 	has_mic = listen_present();
 	conversation();

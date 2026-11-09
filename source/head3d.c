@@ -13,8 +13,8 @@
 #include <stdlib.h>
 #include <malloc.h>
 
-#define MAXV 24000
-#define MAXT 40000
+#define MAXV 30000
+#define MAXT 52000
 
 typedef struct { float x, y, z; } V3;
 enum { SKIN, GLOSS, EMIS, MATTE, DARK };
@@ -45,6 +45,10 @@ static V3 apply(const M3 *m, V3 v) {
 
 #define GLOBE_C v3(-1.08f, 0.18f, -0.30f)
 static int globe_v0, globe_v1;   /* the globe's vertices (lit again each frame as it turns) */
+
+/* which hologram: 0 Professor Scotty, 1 her (see make_blobs_her and build) */
+static int who;
+static float hair_rgb[3] = { 0.80f, 0.80f, 0.85f };
 
 static float cur_r, cur_g, cur_b;
 static int cur_mat, cur_grp;
@@ -237,10 +241,31 @@ static V3 brow_surf[16];
 
 /* an eyelid over an eye (centre c, radii r): the eye's shape a little larger,
  * from the top down to the angle edge (from straight up), with a rounded rim */
+/* a disc lying on an eyeball (centre c, radii r): the iris or the pupil,
+ * curved to its surface (a flat one pokes out at the edges and through the lid) */
+static void eye_disc(V3 c, V3 r, float x0, float y0, float rx, float ry, float off) {
+    const int nu = 18, rings = 6;
+    if (nverts + nu * (rings + 1) > MAXV) return;
+    int base = nverts;
+    for (int j = 0; j <= rings; j++) {
+        float rho = (float)j / rings;
+        for (int i = 0; i < nu; i++) {
+            float a = 6.2831853f * i / nu;
+            float x = x0 + rx * rho * cosf(a), y = y0 + ry * rho * sinf(a);
+            float qx = (x - c.x) / r.x, qy = (y - c.y) / r.y, q = 1 - qx * qx - qy * qy;
+            float qz = -sqrtf(q > 0.02f ? q : 0.02f);
+            V3 n = norm(v3(qx / r.x, qy / r.y, qz / r.z));
+            vert(add(v3(x, y, c.z + qz * r.z), mul(n, off)), n);
+        }
+    }
+    grid(base, nu, rings + 1);
+}
+
+static bool lash;   /* (her lids: a dark lash line along the edge) */
 static void eyelid(V3 c, V3 r, float edge, float tilt) {
     const int nu = 28, rows = 10;
     const float grow = 1.09f;
-    r = v3(r.x * grow, r.y * grow, r.z + 0.03f);   /* (deep enough to clear the iris and pupil) */
+    r = v3(r.x * grow, r.y * grow, r.z + 0.03f);   /* (deep enough to clear the iris and pupil, wherever they look) */
     if (nverts + nu * (rows + 1) > MAXV) return;
     int base = nverts;
     const float *cs = circle(nu, false), *sn = circle(nu, true);
@@ -265,6 +290,28 @@ static void eyelid(V3 c, V3 r, float edge, float tilt) {
         if (e > 3.05f) e = 3.05f;
         float st = sinf(e), ct = cosf(e);
         rim[i] = add(v3(st * cosf(a) * r.x * 1.02f, ct * r.y * 1.02f, st * sinf(a) * r.z * 1.02f), c);
+    }
+    if (lash) {
+        /* hers: winged eyeliner along the top lid, thickening towards the outer
+         * corner and flicking out and up past it to a fine point */
+        float out = c.x >= 0 ? 1 : -1;   /* (which way is the outer corner) */
+        enum { NW = 6 };
+        V3 lp[17 + NW]; float lr[17 + NW];
+        for (int i = 0; i < 17; i++) {
+            int k = out > 0 ? i : 16 - i;   /* (inner corner first) */
+            float u = i / 16.0f;
+            lp[i] = add(rim[k], v3(0, 0.004f + 0.006f * u, -0.004f));
+            lr[i] = 0.009f + 0.012f * u * u;
+        }
+        V3 end = lp[16];
+        for (int w = 1; w <= NW; w++) {
+            float u = (float)w / NW;
+            lp[16 + w] = add(end, v3(out * 0.075f * u, 0.042f * u * u + 0.012f * u, 0.030f * u));
+            lr[16 + w] = 0.021f * (1 - u) + 0.0015f;
+        }
+        colour(0.05f, 0.04f, 0.05f, GLOSS);
+        tube_r(lp, 17 + NW, lr, 8);
+        return;
     }
     tube(rim, 17, 0.013f, 8);
 }
@@ -315,7 +362,11 @@ static float sculpt_d(V3 p, const unsigned char *list, int n) {
     return smin(ds, dh, K_JOIN);
 }
 
+#include "hair_bun_mesh.h"
+static void make_blobs_her(void);
 static void make_blobs(void) {
+    if (who == 1) { make_blobs_her(); return; }
+    hair_rgb[0] = 0.80f; hair_rgb[1] = 0.80f; hair_rgb[2] = 0.85f;
     static const float SK[3] = { 0.90f, 0.73f, 0.64f }, CHEEK[3] = { 0.93f, 0.66f, 0.60f }, EAR[3] = { 0.92f, 0.66f, 0.58f },
                        NOSE[3] = { 0.95f, 0.65f, 0.57f }, LID[3] = { 0.89f, 0.68f, 0.60f }, HAIR[3] = { 0.80f, 0.80f, 0.84f };
     nblobs = 0;
@@ -343,6 +394,191 @@ static void make_blobs(void) {
     }
     blob(0, 0.62f, 0.47f, 0.30f, 0.25f, 0.13f, NULL, HAIR, 0.04f, true);     /* the back of the head */
     blob(0, 0.40f, 0.50f, 0.26f, 0.20f, 0.11f, NULL, HAIR, 0.04f, true);
+}
+
+/* her: a younger, softer face (a smaller nose, a gentler jaw and a little
+ * chin), auburn hair with full bangs down to her brows, swept up at the
+ * sides and back into a bun on top, her ears showing */
+static void make_blobs_her(void) {
+    /* a cute face, a little less round: a soft lower face, a tiny button nose
+     * and no cheek bumps. Only the crown of her hair is part of this smooth
+     * surface; the bob itself is a sheet of its own (hair_bob) that hangs free. */
+    static const float SK[3] = { 0.94f, 0.79f, 0.72f }, EAR[3] = { 0.94f, 0.72f, 0.66f },
+                       NOSE[3] = { 0.95f, 0.74f, 0.68f }, HAIR[3] = { 0.66f, 0.25f, 0.15f };
+    hair_rgb[0] = HAIR[0]; hair_rgb[1] = HAIR[1]; hair_rgb[2] = HAIR[2];
+    nblobs = 0;
+    M3 r;
+    /* (proportions from a head model: a taller head, a narrower face, the
+     * nose, mouth and chin where hers are) */
+    /* (cute and smooth: one round head, a small soft lower face and chin, no
+     * lumps; its height and where the features sit follow the head model) */
+    blob(0, 0.52f, 0.01f, 0.46f, 0.58f, 0.52f, NULL, SK, 0.09f, false);      /* the head: round */
+    blob(0, 0.21f, -0.10f, 0.36f, 0.26f, 0.39f, NULL, SK, 0.09f, false);     /* a small, round lower face */
+    blob(0, 0.06f, -0.26f, 0.13f, 0.07f, 0.09f, NULL, SK, 0.09f, false);     /* her chin, rounded */
+    blob(0, -0.05f, 0.12f, 0.14f, 0.09f, 0.13f, NULL, SK, 0.07f, false);     /* the neck: short */
+    r = rotx(0.30f); blob(0, 0.40f, -0.53f, 0.045f, 0.11f, 0.07f, &r, SK, 0.1f, false);   /* a small, straight nose */
+    blob(0, 0.31f, -0.575f, 0.048f, 0.042f, 0.042f, NULL, NOSE, 0.4f, false);
+    for (int sx = -1; sx <= 1; sx += 2) {
+        r = rotz(-0.10f * sx); blob(0.45f * sx, 0.40f, 0.04f, 0.06f, 0.12f, 0.05f, &r, EAR, 0.08f, false);   /* ears */
+    }
+    /* under her hair (the model, hair_mesh): her scalp in the hair's colour, so no gap ever shows */
+    /* her scalp, in the hair's colour, under the hair model: it comes out past
+     * her skin only on top and at the back (so no skin shows between strands) */
+    blob(0, 0.63f, 0.10f, 0.455f, 0.57f, 0.49f, NULL, HAIR, 0.06f, true);
+}
+
+static V3 surf(float x, float y, float out);
+/* a smooth curve through key points (Catmull-Rom), n points out */
+static void spline(const V3 *k, int nk, V3 *out, int n) {
+    for (int i = 0; i < n; i++) {
+        float f = (float)i / (n - 1) * (nk - 1);
+        int j = (int)f; if (j > nk - 2) j = nk - 2;
+        float t = f - j;
+        V3 p0 = k[j > 0 ? j - 1 : 0], p1 = k[j], p2 = k[j + 1], p3 = k[j + 2 < nk ? j + 2 : nk - 1];
+        float t2 = t * t, t3 = t2 * t;
+        V3 a = mul(p1, 2), b = mul(sub(p2, p0), t), c = mul(add(sub(mul(p0, 2), mul(p1, 5)), sub(mul(p2, 4), p3)), t2),
+           d = mul(add(sub(mul(p1, 3), p0), sub(p3, mul(p2, 3))), t3);
+        out[i] = mul(add(add(a, b), add(c, d)), 0.5f);
+    }
+}
+
+/* her hair, pulled back into a bun on top, from a head model
+ * (hair_bun_mesh.h, made from it by tools/make_hair.py) */
+static void hair_mesh(void) {
+    if (nverts + BUN_NV > MAXV || ntris + BUN_NT > MAXT) return;
+    int base = nverts;
+    colour(0.66f, 0.25f, 0.15f, MATTE);
+    /* (her skin only: the hair is kept just outside it everywhere, so her
+     * bangs and locks lie on her face without ever going into it) */
+    unsigned char skin[MAXB];
+    int ns_ = 0;
+    for (int k = 0; k < nblobs; k++) if (!blobs[k].hair) skin[ns_++] = (unsigned char)k;
+    for (int i = 0; i < BUN_NV; i++) {
+        const float *m = bun_mesh_v[i];
+        V3 p = v3(m[0], m[1], m[2]);
+        bool loose = i >= BUN_CAP_NV;
+        /* the two locks sweeping back over her ears: lifted a little */
+        if (loose && fabsf(p.x) > 0.30f && p.y > 0.20f && p.y < 0.85f) {
+            float k = fminf((fabsf(p.x) - 0.30f) / 0.10f, 1) * fminf((p.z + 0.45f) / 0.25f, 1);
+            if (k > 0) p.y += 0.07f * k;
+        }
+        /* (kept just off her skin: anything in or touching it moved out) */
+        for (int it = 0; it < 8; it++) {
+            float d = sculpt_d(p, skin, ns_);
+            const float keep = 0.02f;
+            if (d >= keep) break;
+            const float e = 0.004f;
+            V3 g = norm(v3(sculpt_d(add(p, v3(e, 0, 0)), skin, ns_) - sculpt_d(sub(p, v3(e, 0, 0)), skin, ns_),
+                           sculpt_d(add(p, v3(0, e, 0)), skin, ns_) - sculpt_d(sub(p, v3(0, e, 0)), skin, ns_),
+                           sculpt_d(add(p, v3(0, 0, e)), skin, ns_) - sculpt_d(sub(p, v3(0, 0, e)), skin, ns_)));
+            p = add(p, mul(g, keep - d));
+        }
+        int vi = vert(p, v3(m[3], m[4], m[5]));
+        if (vi >= 0) vsk[vi] = 0.07f;
+    }
+    for (int k = 0; k < BUN_NT; k++) {
+        tri[ntris][0] = (unsigned short)(base + bun_mesh_t[k][0]);
+        tri[ntris][1] = (unsigned short)(base + bun_mesh_t[k][1]);
+        tri[ntris][2] = (unsigned short)(base + bun_mesh_t[k][2]);
+        ntris++;
+    }
+}
+
+/* the grid of an open sheet (rows x cols points, not wrapping round) */
+static void grid_open(int base, int cols, int rows) {
+    for (int j = 0; j < rows - 1; j++)
+        for (int i = 0; i < cols - 1; i++) {
+            if (ntris + 2 > MAXT) return;
+            int a = base + j * cols + i, b = base + j * cols + i + 1, c = base + (j + 1) * cols + i + 1, d = base + (j + 1) * cols + i;
+            tri[ntris][0] = a; tri[ntris][1] = b; tri[ntris][2] = c; ntris++;
+            tri[ntris][0] = a; tri[ntris][1] = c; tri[ntris][2] = d; ntris++;
+        }
+}
+
+/* Her bob, simple and sleek: one smooth sheet of hair from under the crown,
+ * hanging straight down round her head to her jaw and turning in at the
+ * ends, free of her face and neck; tucked behind one ear (her earring
+ * showing); and blunt bangs straight across her forehead. */
+enum { BOB_PROF = 24 };
+static V3 bob_prof[BOB_PROF];   /* (out from the middle, height) from under the crown down to the ends */
+static float bob_tuck(float v) {   /* where the tucked side starts: over the ear at the top, behind it lower down */
+    float k = (v - 0.26f) / 0.24f; k = k < 0 ? 0 : k > 1 ? 1 : k; k = k * k * (3 - 2 * k);
+    return 0.80f + (1.50f - 0.80f) * k;
+}
+static V3 bob_at(float c, float v) {
+    float f = v * (BOB_PROF - 1);
+    int j = (int)f; if (j > BOB_PROF - 2) j = BOB_PROF - 2;
+    float t = f - j;
+    float rr = bob_prof[j].x + (bob_prof[j + 1].x - bob_prof[j].x) * t, yy = bob_prof[j].y + (bob_prof[j + 1].y - bob_prof[j].y) * t;
+    float a0 = bob_tuck(v), a1 = 6.2831853f - 0.80f;
+    float phi = a0 + (a1 - a0) * c;
+    return v3(sinf(phi) * rr, yy, -cosf(phi) * rr + 0.04f);
+}
+static void hair_bob(void) {
+    static const V3 key[8] = { { 0.40f, 1.07f, 0 }, { 0.53f, 0.93f, 0 }, { 0.595f, 0.72f, 0 }, { 0.612f, 0.48f, 0 },
+                               { 0.606f, 0.26f, 0 }, { 0.585f, 0.11f, 0 }, { 0.545f, 0.035f, 0 }, { 0.49f, 0.01f, 0 } };
+    spline(key, 8, bob_prof, BOB_PROF);
+    const float HR = 0.66f, HG = 0.25f, HB = 0.15f, SHINE = 0.24f;
+    colour(HR, HG, HB, MATTE);
+    /* the sheet */
+    enum { NC = 56, NV = 22 };
+    if (nverts + NC * NV > MAXV) return;
+    int base = nverts;
+    const float e = 0.003f;
+    for (int j = 0; j < NV; j++) {
+        float v = (float)j / (NV - 1);
+        for (int i = 0; i < NC; i++) {
+            float c = (float)i / (NC - 1);
+            V3 p = bob_at(c, v);
+            V3 du = sub(bob_at(fminf(c + e, 1), v), bob_at(fmaxf(c - e, 0), v));
+            V3 dv = sub(bob_at(c, fminf(v + e, 1)), bob_at(c, fmaxf(v - e, 0)));
+            V3 n = norm(cross(du, dv));
+            if (dot(n, v3(p.x, 0, p.z - 0.04f)) < 0) n = mul(n, -1);
+            int vi = vert(p, n);
+            if (vi >= 0) vsk[vi] = SHINE;
+        }
+    }
+    grid_open(base, NC, NV);
+    /* its edges: a soft rolled hem along the ends, and down each side by her face */
+    {
+        V3 hem[40];
+        for (int i = 0; i < 40; i++) hem[i] = bob_at(i / 39.0f, 1);
+        tube(hem, 40, 0.024f, 8);
+        for (int side = 0; side < 2; side++) {
+            V3 ed[16];
+            for (int k = 0; k < 16; k++) ed[k] = bob_at((float)side, 0.10f + 0.90f * k / 15.0f);
+            tube(ed, 16, 0.022f, 8);
+        }
+    }
+    /* the bangs: straight across, from under the crown down to just above her brows */
+    {
+        enum { BC = 26, BR = 12 };
+        if (nverts + BC * BR > MAXV) return;
+        int bb = nverts;
+        V3 pts[BR][BC];
+        for (int j = 0; j < BR; j++) {
+            float v = (float)j / (BR - 1);
+            for (int i = 0; i < BC; i++) {
+                float u = (float)i / (BC - 1), x = -0.45f + 0.90f * u;
+                float yb = 0.755f + 0.05f * (x / 0.45f) * (x / 0.45f);   /* (a touch longer at the middle) */
+                float y = 1.05f + (yb - 1.05f) * v;
+                pts[j][i] = surf(x, y, 0.032f + 0.008f * v);
+            }
+        }
+        for (int j = 0; j < BR; j++)
+            for (int i = 0; i < BC; i++) {
+                V3 du = sub(pts[j][i < BC - 1 ? i + 1 : i], pts[j][i > 0 ? i - 1 : i]);
+                V3 dv = sub(pts[j < BR - 1 ? j + 1 : j][i], pts[j > 0 ? j - 1 : j][i]);
+                V3 n = norm(cross(du, dv));
+                if (n.z > 0) n = mul(n, -1);
+                int vi = vert(pts[j][i], n);
+                if (vi >= 0) vsk[vi] = SHINE;
+            }
+        grid_open(bb, BC, BR);
+        V3 hem[BC];
+        for (int i = 0; i < BC; i++) hem[i] = pts[BR - 1][i];
+        tube(hem, BC, 0.020f, 8);
+    }
 }
 
 /* a point on the front of his face (for the lines and the mouth drawn on it) */
@@ -455,10 +691,32 @@ static void sculpt(void) {
                 crease = d2 > 0 ? fminf(d2 / 0.03f, 1) : 0;
             }
             float hk = 1 - 0.22f * crease;
-            col[0] = skin_col[0] * (1 - hairy) + 0.80f * hk * hairy;
-            col[1] = skin_col[1] * (1 - hairy) + 0.80f * hk * hairy;
-            col[2] = skin_col[2] * (1 - hairy) + 0.85f * hk * hairy;
+            col[0] = skin_col[0] * (1 - hairy) + hair_rgb[0] * hk * hairy;
+            col[1] = skin_col[1] * (1 - hairy) + hair_rgb[1] * hk * hairy;
+            col[2] = skin_col[2] * (1 - hairy) + hair_rgb[2] * hk * hairy;
             shine = skin_sh * (1 - hairy) + 0.04f * hairy;
+#ifdef BUN_COVER
+            if (who == 1) {   /* (under her hair model: hair-coloured, combed back, so her skin never shows) */
+                V3 d = sub(p, v3(0, 0.5f, 0));
+                float rr = sqrtf(dot(d, d));
+                float fj = acosf(fmaxf(-1, fminf(1, d.y / rr))) / 3.1415927f * 90 - 0.5f, fi = (atan2f(d.z, d.x) + 3.1415927f) / 6.2831853f * 180 - 0.5f;
+                int j0 = (int)floorf(fj), i0 = (int)floorf(fi);
+                float tj = fj - j0, ti = fi - i0;
+                #define CV(j, i) (bun_cover[(j) < 0 ? 0 : (j) > 89 ? 89 : (j)][((i) % 180 + 180) % 180] / 255.0f)
+                float cv = (CV(j0, i0) * (1 - ti) + CV(j0, i0 + 1) * ti) * (1 - tj) + (CV(j0 + 1, i0) * (1 - ti) + CV(j0 + 1, i0 + 1) * ti) * tj;
+                #undef CV
+                float k = (cv - 0.42f) / 0.10f; k = k < 0 ? 0 : k > 1 ? 1 : k; k = k * k * (3 - 2 * k);
+                if (k > 0) {
+                    /* fine combed lines, running back from her hairline to the bun */
+                    V3 b = sub(p, v3(0, 1.1f, 0.42f));
+                    float ang = atan2f(b.x, -b.z);
+                    float comb = 0.86f + 0.14f * (0.5f + 0.5f * sinf(ang * 46));
+                    float hc[3] = { hair_rgb[0] * comb, hair_rgb[1] * comb, hair_rgb[2] * comb };
+                    for (int c = 0; c < 3; c++) col[c] = col[c] * (1 - k) + hc[c] * k;
+                    shine = shine * (1 - k) + 0.10f * k;
+                }
+            }
+#endif
             (void)wsum; (void)dmin;
             colour(col[0], col[1], col[2], SKIN);
             int vi = vert(p, nrm);
@@ -485,23 +743,55 @@ static void build(const HeadPose *ps, bool S) {
     make_blobs();
     make_zmap();
     sculpt();   /* head, face, ears, neck and hair: one smooth surface */
+    if (who == 1) hair_mesh();   /* (her bob: the hair model) */
     }
     for (int sx = -1; sx <= 1; sx += 2) {
         if (S) {
         /* eyes, with heavy upper lids (a wise, amused squint) */
-        colour(0.98f, 0.98f, 1.0f, GLOSS); ell(0.20f * sx, 0.52f, -0.50f, 0.125f, 0.11f, 0.085f, 24, 16, NULL);
+        colour(0.98f, 0.98f, 1.0f, GLOSS);
+        if (who == 1) ell(0.20f * sx, 0.48f, -0.44f, 0.125f, 0.115f, 0.09f, 24, 16, NULL);   /* (hers: about Scotty's size, a touch rounder) */
+        else ell(0.20f * sx, 0.52f, -0.50f, 0.125f, 0.11f, 0.085f, 24, 16, NULL);
         continue;
         }
-        colour(0.20f, 0.30f, 0.48f, GLOSS);
-        ell(0.19f * sx + 0.01f + 0.025f * th + ps->look_x * 0.03f, 0.51f + 0.03f * th, -0.58f, 0.058f, 0.064f, 0.02f, 16, 10, NULL);
-        colour(0.03f, 0.04f, 0.08f, GLOSS);
-        ell(0.19f * sx + 0.01f + 0.025f * th + ps->look_x * 0.03f, 0.51f + 0.03f * th, -0.596f, 0.026f, 0.029f, 0.008f, 12, 6, NULL);   /* the pupil */
+        if (who == 1) {   /* hers: big blue-grey eyes, with a sparkle */
+            float ix = 0.195f * sx + 0.02f * th + ps->look_x * 0.035f, iy = 0.47f + 0.03f * th;
+            /* (sitting on the eyeball's curve, so they stay under her lids however she looks) */
+            V3 ec = v3(0.20f * sx, 0.48f, -0.44f), er = v3(0.125f, 0.115f, 0.09f);
+            colour(0.34f, 0.46f, 0.60f, GLOSS); eye_disc(ec, er, ix, iy, 0.062f, 0.068f, 0.003f);
+            colour(0.03f, 0.04f, 0.08f, GLOSS); eye_disc(ec, er, ix, iy, 0.029f, 0.032f, 0.006f);
+            colour(1.0f, 1.0f, 1.0f, EMIS); eye_disc(ec, er, ix - 0.022f, iy + 0.025f, 0.013f, 0.013f, 0.009f);
+            colour(0.94f, 0.79f, 0.72f, SKIN);
+            lash = true;
+            eyelid(v3(0.20f * sx, 0.48f, -0.44f), v3(0.125f, 0.115f, 0.09f), 1.17f + (2.95f - 1.17f) * blink, 0.08f * sx * (1 - blink));
+            lash = false;
+        } else {
+        {   /* his iris and pupil, curved to his eyeball (so they stay under his lids) */
+            V3 ec = v3(0.20f * sx, 0.52f, -0.50f), er = v3(0.125f, 0.11f, 0.085f);
+            float ix = 0.19f * sx + 0.01f + 0.025f * th + ps->look_x * 0.03f, iy = 0.51f + 0.03f * th;
+            colour(0.20f, 0.30f, 0.48f, GLOSS); eye_disc(ec, er, ix, iy, 0.058f, 0.064f, 0.003f);
+            colour(0.03f, 0.04f, 0.08f, GLOSS); eye_disc(ec, er, ix, iy, 0.026f, 0.029f, 0.006f);   /* the pupil */
+        }
         /* the upper lid: a smooth shell over the top of the eye, down to a soft
          * rounded edge (heavy-lidded; all the way down for a blink) */
         colour(SK[0], SK[1], SK[2], SKIN);
         eyelid(v3(0.20f * sx, 0.52f, -0.50f), v3(0.125f, 0.11f, 0.085f), 1.28f + (2.95f - 1.28f) * blink, 0.16f * sx * (1 - blink));
+        }
         /* big expressive eyebrows */
         float lift = 0.03f * talk + (sx > 0 ? 0.07f : -0.015f) * th + ps->brows * 0.04f;
+        if (who == 1) {   /* hers: fine auburn arches */
+            colour(0.55f, 0.22f, 0.14f, MATTE);
+            V3 p[8]; float rad[8];
+            for (int i = 0; i < 8; i++) {
+                float u = i / 7.0f;
+                float x = (0.08f + 0.32f * u) * sx;
+                float y = 0.705f + lift + 0.045f * sinf(u * 3.0f) - 0.02f * u;
+                const V3 *bs = &brow_surf[i + (sx > 0 ? 8 : 0)];
+                p[i] = add(*bs, v3(x - bs->x, y - bs->y, -0.01f));
+                rad[i] = 0.010f + 0.009f * sinf(3.1415927f * (0.15f + 0.85f * u)) * (1 - 0.5f * u);
+            }
+            tube_r(p, 8, rad, 8);
+            continue;
+        }
         colour(BROW[0], BROW[1], BROW[2], MATTE);
         {
             /* a bushy brow: thick at the inner end, sweeping up and out to a point */
@@ -519,7 +809,7 @@ static void build(const HeadPose *ps, bool S) {
     if (S) {
     /* forehead lines */
     colour(0.80f, 0.56f, 0.48f, MATTE);
-    for (int k = 0; k < 2; k++) {
+    for (int k = 0; k < 2 && who == 0; k++) {
         V3 p[9];
         for (int i = 0; i < 9; i++) {
             float x = -0.2f + k * 0.03f + (0.4f - k * 0.06f) * i / 8;
@@ -536,7 +826,15 @@ static void build(const HeadPose *ps, bool S) {
     /* a big, full grey moustache: a rounded lobe each side, meeting under his
      * nose and sweeping up at the ends into little curls */
     colour(0.84f, 0.84f, 0.88f, MATTE);
-    {
+    if (who == 1) {
+        /* hers instead: little pearl studs in her ears */
+        {   /* a pearl drop from the ear her hair is tucked behind */
+            for (int sx = -1; sx <= 1; sx += 2) {
+                colour(0.86f, 0.70f, 0.45f, GLOSS); ell(0.465f * sx, 0.265f, 0.0f, 0.010f, 0.022f, 0.010f, 8, 6, NULL);
+                colour(0.96f, 0.95f, 0.92f, GLOSS); ell(0.465f * sx, 0.215f, -0.01f, 0.034f, 0.034f, 0.034f, 12, 8, NULL);
+            }
+        }
+    } else {
         static const float key[10][3] = {   /* x, y, thickness, from the middle out to the curl */
             { -0.020f, 0.150f, 0.048f }, { 0.040f, 0.140f, 0.066f }, { 0.100f, 0.118f, 0.086f }, { 0.155f, 0.104f, 0.092f },
             { 0.208f, 0.110f, 0.080f }, { 0.246f, 0.134f, 0.058f }, { 0.264f, 0.168f, 0.038f }, { 0.258f, 0.198f, 0.023f },
@@ -561,7 +859,69 @@ static void build(const HeadPose *ps, bool S) {
         }
     }
     }
-    if (D) {
+    if (D && who == 1) {
+    /* her mouth: full lips in black lipstick, a gentle smile, or open as she talks */
+    const float LIP[3] = { 0.10f, 0.07f, 0.10f };
+    if (talk > 0.05f) {
+        float mh = 0.016f + 0.040f * talk, mw = 0.075f - 0.010f * talk;
+        const float my = 0.14f;
+        V3 m = surf(0, my, -0.012f);
+        colour(0.30f, 0.07f, 0.11f, DARK); ell(0, my, m.z, mw, mh, 0.03f, 20, 10, NULL);
+        if (talk > 0.25f) { colour(0.97f, 0.96f, 0.93f, SKIN); ell(0, my + mh * 0.62f, m.z - 0.012f, mw * 0.6f, 0.012f, 0.02f, 14, 6, NULL); }
+        V3 lp[25];
+        for (int i = 0; i < 25; i++) {
+            float a = 6.2831853f * i / 24;
+            lp[i] = surf(cosf(a) * (mw + 0.010f), my + sinf(a) * (mh + 0.012f), 0.004f);
+        }
+        colour(LIP[0], LIP[1], LIP[2], GLOSS); tube(lp, 25, 0.018f, 8);
+    } else {
+        /* the upper lip (a soft bow) and the fuller lower lip, smiling a little */
+        enum { NL = 17 };
+        V3 up[NL], lo[NL]; float ru[NL], rl[NL];
+        for (int i = 0; i < NL; i++) {
+            float u = i / (float)(NL - 1), x = -0.09f + 0.18f * u;
+            float line = 0.145f + 2.4f * x * x;                          /* where they meet: the corners turned up */
+            float taper = sinf(3.1415927f * (0.03f + 0.94f * u));
+            float bow = 0.004f * expf(-(fabsf(x) - 0.032f) * (fabsf(x) - 0.032f) / 0.0004f);   /* the two soft peaks of the upper lip */
+            up[i] = surf(x, line + 0.011f * taper + bow, 0.012f);
+            lo[i] = surf(x, line - 0.015f * taper, 0.015f);
+            ru[i] = 0.004f + 0.012f * taper;
+            rl[i] = 0.005f + 0.017f * taper;
+        }
+        colour(LIP[0], LIP[1], LIP[2], GLOSS);
+        tube_r(up, NL, ru, 8);
+        tube_r(lo, NL, rl, 8);
+    }
+    /* round black spectacles, on her nose (a touch lower when she thinks) */
+    {
+        V3 at = v3(0, 0.475f - 0.02f * th, -0.645f);
+        M3 R = rotx(0.06f);
+        colour(0.06f, 0.06f, 0.07f, GLOSS);
+        for (int sx = -1; sx <= 1; sx += 2) {
+            V3 p[33];
+            for (int i = 0; i < 33; i++) {
+                float a = 6.2831853f * i / 32;
+                p[i] = add(apply(&R, v3(0.232f * sx + 0.182f * cosf(a), 0.172f * sinf(a), 0)), at);   /* (oversized) */
+            }
+            tube(p, 33, 0.017f, 6);   /* (no arms: just the rims, as a hologram can have) */
+        }
+        V3 b[5];
+        for (int i = 0; i < 5; i++) { float u = i / 4.0f; b[i] = add(apply(&R, v3(-0.052f + 0.104f * u, 0.03f + 0.018f * sinf(3.1415927f * u), -0.01f)), at); }
+        tube(b, 5, 0.012f, 6);
+    }
+    /* a string of pearls round her neck (it sways a little) */
+    {
+        colour(0.96f, 0.95f, 0.92f, GLOSS);
+        float sway = 0.03f * sinf(t * 2) + 0.06f * ps->chuckle;
+        for (int k = 0; k < 15; k++) {
+            float a = 3.1415927f * (0.12f + 0.76f * k / 14.0f) + sway;   /* round the front */
+            float x = -cosf(a) * 0.20f, z = -sinf(a) * 0.20f + 0.09f;
+            float y = -0.10f - 0.05f * sinf(a);
+            ell(x, y, z, 0.034f, 0.034f, 0.034f, 10, 6, NULL);
+        }
+    }
+    }
+    if (D && who == 0) {
     /* the mouth: a lopsided, knowing smile, or open as he talks */
     if (talk > 0.05f) {
         float mh = 0.022f + 0.05f * talk, mw = 0.115f - 0.015f * talk;
@@ -846,6 +1206,12 @@ static void vertex_setup(void) {
 }
 
 static void make_static(void) {
+    /* (made again for the other hologram: the last one's lists go first) */
+    for (int g = 0; g < NGRP; g++) {
+        free(stat_list[g]); stat_list[g] = NULL;
+        free(dl[g]); dl[g] = NULL; dl_size[g] = 0;
+    }
+    for (int a = 0; a < 3; a++) { hb_min[a] = 1e9f; hb_max[a] = -1e9f; }
     for (int i = 0; i < ns; i++) {
         store(i);
         if (vgrp[i] == G_HEAD) {
@@ -881,13 +1247,16 @@ static void make_static(void) {
 }
 
 static unsigned build_gen;   /* (counts builds: the moving parts' display lists are made once per build) */
+static int made_for = -1;    /* which hologram the parts that never change were made for */
+void head3d_character(int c) { who = c == 1 ? 1 : 0; }
+int head3d_get_character(void) { return who; }
 void head3d_build(const HeadPose *ps) {
     build_gen++;
-    static bool made;
-    if (!made) {   /* the parts that never change: made, lit and recorded once */
+    if (made_for != who) {   /* the parts that never change: made, lit and recorded once (again if the hologram changes) */
+        zmap_made = false;
         build(ps, true);
         make_static();
-        made = true;
+        made_for = who;
     }
     build(ps, false);
     float t = ps->t, th = ps->think;

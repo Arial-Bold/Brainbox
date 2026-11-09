@@ -180,7 +180,7 @@ bool conn_open(Conn *c, const char *host, unsigned short port, bool tls, volatil
 
     if (!inited && !tls_global_init(err, errlen)) { conn_close(c); return false; }
     if (!ca_ok) {
-        snprintf(err, errlen, "The certificate file (cacert.pem, beside Professor Scotty) is missing from the SD card.");
+        snprintf(err, errlen, "The certificate file (cacert.pem, in the brainbox folder) is missing from the SD card.");
         conn_close(c);
         return false;
     }

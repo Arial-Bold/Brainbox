@@ -14,6 +14,7 @@ const char *ai_id(AiBrain b);            /* "gemini", "claude", "openai", "groq"
 AiBrain ai_from_id(const char *id);      /* AI_COUNT if unknown */
 
 void ai_set(AiBrain b, const char *key, const char *model);   /* model "" = the usual one */
+void ai_set_character(int c);            /* which hologram is talking (UI_CHAR_*): how the AI is told to answer */
 const char *ai_default_model(AiBrain b);
 
 void ai_ask(const char *question);       /* starts asking (CP-1252 text) */

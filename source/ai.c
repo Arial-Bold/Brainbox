@@ -1,5 +1,6 @@
 /* ai.c - see ai.h. */
 #include "ai.h"
+#include "ui.h"
 #include "json.h"
 #include "net/https.h"
 #include "net/net.h"
@@ -15,16 +16,27 @@
 #define ANSWER_MAX 4000
 #define TURNS 12                     /* questions and answers kept for context */
 
-static const char *SYSTEM =
+/* how each hologram talks (the rules for replies are shared: SPOKEN) */
+static const char *SCOTTY =
     "You are Professor Scotty, a kindly, cheerful, slightly absent-minded old professor who lives as a "
-    "hologram inside a Nintendo GameCube. Your replies are read aloud by a simple speech synthesizer and "
+    "hologram inside a Nintendo GameCube. Be warm, curious and encouraging, with an old professor's gentle "
+    "humor; now and then begin with 'Ah!' or 'Hmm.' You're a Scot: now and then a light Scottish word like "
+    "'aye', 'wee' or 'och' fits, but don't overdo it. ";
+static const char *HER =
+    "You are " UI_HER_NAME ", a bright, warm and witty young professor and head librarian who lives as a "
+    "hologram inside a Nintendo GameCube. You adore books, words and odd facts, and you're quick with a "
+    "playful, clever remark; friendly and encouraging, never stuffy. You're American: plain, friendly "
+    "American English, no Scottish words. Now and then begin with 'Oh!' or 'Ooh,'. ";
+static const char *SPOKEN =
+    "Your replies are read aloud by a simple speech synthesizer and "
     "shown in a small speech bubble, so: answer in one to four short sentences of plain spoken English; "
     "no lists, headings, markdown (no asterisks or underscores, not even around titles), emoji or web addresses; write numbers and symbols the way they are "
-    "said aloud when that is clearer. Be warm, curious and encouraging, with an old professor's gentle "
-    "humor; now and then begin with 'Ah!' or 'Hmm.' You're a Scot: now and then a light Scottish word like 'aye', 'wee' or 'och' fits, but don't overdo it. If a question needs a long answer, give the heart of "
+    "said aloud when that is clearer. If a question needs a long answer, give the heart of "
     "it and offer to say more. You are an AI character, not a real person. "
     "You can talk about any subject, including politics, religion and current events: answer those even-handedly, "
     "with the facts and the main points of view, without taking sides yourself, rather than declining.";
+static int character;
+void ai_set_character(int c) { character = c; }
 
 /* added when he can look things up: the brain asks for a search instead of guessing */
 static const char *SEARCH_RULE =
@@ -47,7 +59,7 @@ void ai_set_search(const char *k, bool on) { snprintf(search_key, sizeof(search_
 bool ai_searching(void) { return searching; }
 
 static char sys[2600];   /* the instructions for this request */
-static void make_sys(const char *extra) { snprintf(sys, sizeof(sys), "%s%s", SYSTEM, extra ? extra : ""); }
+static void make_sys(const char *extra) { snprintf(sys, sizeof(sys), "%s%s%s", character == 1 ? HER : SCOTTY, SPOKEN, extra ? extra : ""); }
 
 typedef struct { bool user; char *text; } Turn;
 static Turn turns[TURNS];

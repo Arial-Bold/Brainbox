@@ -8,7 +8,11 @@
 #include <stdbool.h>
 
 void speech_init(void);           /* after sound_init; Flite starts on a thread of its own */
-bool speech_ready(void);          /* Flite has started */
+bool speech_ready(void);          /* Flite has started, with a voice */
+/* the voice to use: a .flitevox file (loaded in the background; speech_ready
+ * goes false until it's in). speech_voice_missing: it couldn't be loaded. */
+void speech_voice(const char *path);
+bool speech_voice_missing(void);
 void speech_say(const char *text);/* says text (CP-1252), cutting off anything he was saying */
 void speech_stop(void);           /* stops talking */
 bool speech_busy(void);           /* still making or playing speech */

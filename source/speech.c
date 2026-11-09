@@ -28,7 +28,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-cst_voice *register_cmu_us_awb(const char *voxdir);
+/* The voices are files beside the app (voice_scotty.flitevox: Flite's awb,
+ * a Scottish man; voice_her.flitevox: slt, an American woman). Only the one
+ * in use is loaded (each is about 2.5 MB of memory). */
+static char voice_file[300];
+static volatile u32 voice_req;   /* bumped when the voice to use changes */
+static volatile bool voice_missing;
 void usenglish_init(cst_voice *v);
 cst_lexicon *cmulex_init(void);
 extern jmp_buf *cst_errjmp;
@@ -271,22 +276,34 @@ static void *talk_main(void *arg) {
         flite_init();
         flite_add_lang("eng", usenglish_init, cmulex_init);
         flite_add_lang("usenglish", usenglish_init, cmulex_init);
-        voice = register_cmu_us_awb(NULL);
-        saywords_teach(voice);   /* the words it would get wrong */
-        if (voice) {
-            if (VOICE_SPEEDUP) feat_set_int(voice->features, "mlsa_speed_param", VOICE_SPEEDUP);
-            cst_audio_streaming_info *asi = new_audio_streaming_info();
-            asi->min_buffsize = 1024;
-            asi->asc = streamed;
-            feat_set(voice->features, "streaming_info", audio_streaming_info_val(asi));
-        }
     }
     cst_errjmp = NULL;
-    ready = voice != NULL;
     static s16 gap[RATE / 6];   /* a short pause after each sentence */
     memset(gap, 0, sizeof(gap));
-    u32 done_gen = 0;
+    u32 done_gen = 0, voice_got = 0;
     for (;;) {
+        /* the voice: loaded (again) when it's asked for or changed, between answers */
+        if (voice_req != voice_got && !making) {
+            voice_got = voice_req;
+            ready = false;
+            if (voice) { delete_voice(voice); voice = NULL; }
+            cst_voice *v = NULL;
+            cst_errjmp = &jb;
+            if (!setjmp(jb)) v = flite_voice_load(voice_file);
+            cst_errjmp = NULL;
+            if (v) {
+                saywords_teach(v);   /* the words it would get wrong */
+                if (VOICE_SPEEDUP) feat_set_int(v->features, "mlsa_speed_param", VOICE_SPEEDUP);
+                cst_audio_streaming_info *asi = new_audio_streaming_info();
+                asi->min_buffsize = 1024;
+                asi->asc = streamed;
+                feat_set(v->features, "streaming_info", audio_streaming_info_val(asi));
+            }
+            voice = v;
+            voice_missing = v == NULL;
+            ready = v != NULL;
+            done_gen = job_gen;   /* (anything asked while it was changing: dropped) */
+        }
         if (!ready || job_gen == done_gen) { thr_sleep_ms(20); continue; }
         thr_lock(&job_lock);
         u32 g = job_gen;
@@ -361,6 +378,20 @@ void speech_init(void) {
 }
 
 bool speech_ready(void) { return ready; }
+bool speech_voice_missing(void) { return voice_missing; }
+
+void speech_voice(const char *path) {
+    thr_lock(&job_lock);
+    if (strcmp(voice_file, path)) {
+        snprintf(voice_file, sizeof(voice_file), "%s", path);
+        gen++;
+        drop_queued();
+        ready = false;
+        voice_missing = false;
+        voice_req++;
+    }
+    thr_unlock(&job_lock);
+}
 
 void speech_say(const char *text) {
     thr_lock(&job_lock);

@@ -30,7 +30,8 @@
 
 /* ================================================================ settings */
 
-UiSettings ui_set = { UI_RES_AUTO, 0, 1, 0, 8, 4, 1, 3 /* Groq */, "", { "", "", "", "" }, { "", "", "", "" }, 0, 1, 0, 1, 1 };
+UiSettings ui_set = { UI_RES_AUTO, 0, 1, 0, 8, 4, 1, 3 /* Groq */, "", { "", "", "", "" }, { "", "", "", "" }, 0, 1, 0, 1, 1, UI_CHAR_SCOTTY };
+const char *ui_char_name(int c) { return c == UI_CHAR_HER ? UI_HER_NAME : "Professor Scotty"; }
 static char settings_file[300];
 static const char *brain_ids[UI_BRAINS] = { "gemini", "claude", "openai", "groq" };
 
@@ -71,6 +72,7 @@ void ui_settings_load(void) {
 		else if (!strcmp(line, "sound.menu")) ui_set.sound_volume = clampi(v, 0, UI_VOLUME_MAX);
 		else if (!strcmp(line, "chat.captions")) ui_set.captions = v ? 1 : 0;
 		else if (!strcmp(line, "chat.web_search")) ui_set.web_search = v ? 1 : 0;
+		else if (!strcmp(line, "chat.hologram")) ui_set.character = clampi(v, 0, UI_CHARS - 1);
 		else if (!strcmp(line, "exit.launcher")) snprintf(ui_set.launcher, sizeof(ui_set.launcher), "%s", val);
 		else if (!strcmp(line, "brain")) { for (int i = 0; i < UI_BRAINS; i++) if (!strcmp(val, brain_ids[i])) ui_set.brain = i; }
 		else for (int i = 0; i < UI_BRAINS; i++) {
@@ -89,7 +91,7 @@ bool ui_settings_save(void) {
 	if (!settings_file[0]) return false;
 	static char out[2400];
 	int n = snprintf(out, sizeof(out),
-		"# Professor Scotty's settings\n"
+		"# BrainBox settings\n"
 		"display.resolution=%d\ndisplay.widescreen=%d\ndisplay.full_width=%d\ndisplay.overscan=%d\n"
 		"sound.voice=%d\nsound.menu=%d\nchat.captions=%d\nbrain=%s\nexit.launcher=%s\n",
 		ui_set.resolution, ui_set.widescreen, ui_set.full_width, ui_set.overscan,
@@ -101,6 +103,7 @@ bool ui_settings_save(void) {
 	if (ui_set.fps) n += snprintf(out + n, sizeof(out) - n, "display.fps=1\n");
 	if (!ui_set.intro) n += snprintf(out + n, sizeof(out) - n, "display.intro=0\n");
 	if (!ui_set.web_search) n += snprintf(out + n, sizeof(out) - n, "chat.web_search=0\n");
+	n += snprintf(out + n, sizeof(out) - n, "chat.hologram=%d\n", ui_set.character);
 	return storage_write_atomic(settings_file, out, (size_t)n);
 }
 
@@ -1047,6 +1050,7 @@ static void stage(void) {
 	STEP(2);
 	room(cx);
 	STEP(3);
+	head3d_character(ui_set.character);   /* (which hologram: made afresh when it changes) */
 	head3d_build(&pose);
 	STEP(4);
 	/* (making him the first time sets up the GPU's vertex description for his
@@ -1210,7 +1214,7 @@ static void chat(void) {
 		sc.him_more = n - first - shown;
 		float h = 34 + shown * 18;
 		bubble_frame(x, y, w, h, true);
-		text(x + 14, y + 13, "Professor Scotty", 10, rgba(140, 220, 255, 255), 0, 0);
+		text(x + 14, y + 13, ui_char_name(ui_set.character), 10, rgba(140, 220, 255, 255), 0, 0);
 		for (int i = 0; i < shown; i++) text(x + 14, y + 30 + i * 18, lines[first + i], 13, TEXT, 0, w - 24);
 		if (sc.him_more > 0) tri(x + w - 20, y + h - 12, x + w - 12, y + h - 12, x + w - 16, y + h - 6, GOLD);
 		if (first > 0) tri(x + w - 20, y + 14, x + w - 12, y + 14, x + w - 16, y + 8, GOLD);
@@ -1489,7 +1493,7 @@ static void settings_screen(void) {
 	snprintf(ver, sizeof(ver), "BrainBox %s", appversion);
 	text(px + pw - 16, py + 17, ver, 15, SOFT, 2, 220);
 	rect(px + 10, py + 31, pw - 20, 1, rgba(200, 210, 230, 71));
-	const float pitch = 26.5f, rh = 25;
+	const float pitch = sc.orow_count > 11 ? 24.4f : 26.5f, rh = sc.orow_count > 11 ? 23 : 25;
 	for (int i = 0; i < sc.orow_count; i++) {
 		float x = px + 8, y = py + 38 + i * pitch, w = pw - 16, cy = y + rh / 2;
 		bool on = i == sc.osel;

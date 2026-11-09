@@ -34,9 +34,11 @@ static const char *const extra[][2] = {
 };
 
 void saywords_teach(cst_voice *v) {
+    static cst_lexicon *taught;   /* (the dictionary is shared by the voices: taught once) */
     if (!v) return;
     cst_lexicon *lex = val_lexicon(feat_val(v->features, "lexicon"));
-    if (!lex) return;
+    if (!lex || lex == taught) return;
+    taught = lex;
     cst_val *added = NULL;
     for (size_t i = 0; i < sizeof(extra) / sizeof(extra[0]); i++) {
         char line[160];
