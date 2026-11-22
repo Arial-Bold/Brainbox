@@ -37,9 +37,17 @@ With the microphone in a memory card slot, hold the button on the microphone (or
 
 Groq, Google Gemini and ChatGPT can listen. When Groq is signed in, it always does the listening (with Whisper, which is quick and free), whichever AI answers. Claude can't take sound, so if Claude is his brain, also sign in to Groq (Settings > Brain, then switch back to Claude): Groq writes down what you say, and Claude answers.
 
+## The weather, the date and the time
+
+Ask "what's the weather?", "will it snow tomorrow?" or "how cold is it in Paris?" and he looks it up and answers in his own words, with today's conditions and a three-day forecast. This works with every brain and needs no extra account: the weather comes from [Open-Meteo](https://open-meteo.com/), which is free and needs no key.
+
+He also knows today's date and the local time, so "what day is it?" or "how long until Christmas?" just work.
+
+For your own weather he needs to know where you are. Settings > Home town is Auto at first: BrainBox guesses your town from your internet connection (with GeoJS, or ipwho.is if that doesn't answer), and the row shows the town it found. Internet providers' guesses can be a town or two off, so if it's wrong, choose Home town and type yours with the keyboard controller ("Detroit", or "Paris, France" to be exact). X puts it back to Auto. Temperatures are in Fahrenheit in the US and Celsius elsewhere.
+
 ## Looking things up
 
-With Google Gemini signed in (Settings > Brain; it can be signed in alongside Groq, whichever AI is his brain), Professor Scotty can look things up with Google Search when a question needs today's information: news, recent events, scores, prices, the weather. His brain decides when; while he searches, the bar says "Let me look that up on the web", and his answer starts with something like "According to Google". The searches use Gemini 2.5 Flash, which includes up to 500 searches a day on Google's free allowance. `chat.web_search=0` in `brainbox.ini` turns this off.
+With Google Gemini signed in (Settings > Brain; it can be signed in alongside Groq, whichever AI is his brain), Professor Scotty can look things up with Google Search when a question needs today's information: news, recent events, scores, prices. Your home town is passed along too, so "near me" questions get local answers. His brain decides when; while he searches, the bar says "Let me look that up on the web", and his answer starts with something like "According to Google". The searches use Gemini 2.5 Flash, which includes up to 500 searches a day on Google's free allowance. `chat.web_search=0` in `brainbox.ini` turns this off. Without a Gemini key, he says he can't look things up yet and tells you how to turn it on.
 
 ## Controls
 
@@ -65,6 +73,7 @@ With Google Gemini signed in (Settings > Brain; it can be signed in alongside Gr
 - **Hologram**: Professor Scotty or Dr. Brahms.
 - **Captions**: shows the answers in a bubble as they're spoken.
 - **Brain**: which AI he uses (Groq, Google Gemini, Claude or ChatGPT), and signing in to it.
+- **Home town**: where you are, for the weather and the local time. Auto guesses from your internet connection; A types a town (with the keyboard controller), X goes back to Auto.
 - **Updates**: opens Software Update, to see what's new in a newer BrainBox, install it and restart into it.
 - **Launcher**: which .dol at the root of the SD card Exit to Launcher starts.
 - **Exit to Launcher**: leaves BrainBox.
@@ -97,6 +106,7 @@ Every push to GitHub builds it too (see the Actions tab), and the result is a zi
 - libogc2 and libdvm: Extrems and the devkitPro team
 - Font: M PLUS Rounded 1c (SIL Open Font License, see `tools/fonts/OFL.txt`)
 - [QR Code generator library](https://www.nayuki.io/page/qr-code-generator-library): Project Nayuki (MIT)
+- Weather data by [Open-Meteo.com](https://open-meteo.com/) (CC BY 4.0); town lookup from your connection by [GeoJS](https://www.geojs.io/) and [ipwho.is](https://ipwho.is/)
 - The globe's map: drawn from the [world.geo.json](https://github.com/johan/world.geo.json) country outlines (public domain)
 
 BrainBox's own code is under the MIT License (see `LICENSE`). The notices for the software and data above that are built into BrainBox are in `THIRD_PARTY_NOTICES.md`.
