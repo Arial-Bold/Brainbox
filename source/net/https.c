@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <unistd.h>
 
 #define URL_CAP 2048
 #define HEAD_CAP 16384
@@ -157,7 +158,7 @@ static int open_stream(Stream *s, const char *start_url, const char *accept, vol
     return -1;
 }
 
-int https_get(const char *url, const char *accept, char **body, size_t *len, size_t max, volatile int *cancel,
+static int get_one(const char *url, const char *accept, char **body, size_t *len, size_t max, volatile int *cancel,
               char *err, size_t errlen) {
     static Stream s;
     *body = NULL;
@@ -188,7 +189,7 @@ int https_get(const char *url, const char *accept, char **body, size_t *len, siz
     return status;
 }
 
-bool https_download(const char *url, const char *path, HttpsProgress *pg, volatile int *cancel, char *err,
+static bool download_one(const char *url, const char *path, HttpsProgress *pg, volatile int *cancel, char *err,
                     size_t errlen) {
     static Stream s;
     long length = -1;
@@ -225,7 +226,7 @@ bool https_download(const char *url, const char *path, HttpsProgress *pg, volati
 
 /* ------------------------------------------------------------------ POST */
 
-int https_post(const char *url, const char *headers, const char *body, size_t body_len, char **resp, size_t *resp_len,
+static int post_one(const char *url, const char *headers, const char *body, size_t body_len, char **resp, size_t *resp_len,
                size_t max, volatile int *cancel, char *err, size_t errlen) {
     static Stream s;
     *resp = NULL;
@@ -294,4 +295,48 @@ int https_post(const char *url, const char *headers, const char *body, size_t bo
     *resp = b;
     if (resp_len) *resp_len = got;
     return status;
+}
+
+/* ------------------------------------------------- one request at a time
+ * mbedTLS is built without its thread support, so its shared parts (the
+ * crypto library's key slots, the random generator, the TLS settings, and
+ * setting them up the first time) mustn't be used by two threads at once;
+ * this file's own buffers are shared too. Since 1.4 the town lookup, the
+ * update check and a question can all start together, which crashed it, so
+ * each request now waits its turn. (A test-and-set flag rather than a
+ * mutex: it needs no setting up first.) */
+static volatile int turn;
+static bool take_turn(volatile int *cancel) {
+    while (__sync_lock_test_and_set(&turn, 1)) {
+        if (cancel && *cancel) return false;
+        usleep(10 * 1000);   /* (lets the thread that has it get on) */
+    }
+    return true;
+}
+static void give_turn(void) { __sync_lock_release(&turn); }
+
+int https_get(const char *url, const char *accept, char **body, size_t *len, size_t max, volatile int *cancel,
+              char *err, size_t errlen) {
+    if (body) *body = NULL;
+    if (!take_turn(cancel)) { snprintf(err, errlen, "Stopped."); return -1; }
+    int r = get_one(url, accept, body, len, max, cancel, err, errlen);
+    give_turn();
+    return r;
+}
+
+bool https_download(const char *url, const char *path, HttpsProgress *pg, volatile int *cancel, char *err,
+                    size_t errlen) {
+    if (!take_turn(cancel)) { snprintf(err, errlen, "Stopped."); return false; }
+    bool r = download_one(url, path, pg, cancel, err, errlen);
+    give_turn();
+    return r;
+}
+
+int https_post(const char *url, const char *headers, const char *body, size_t body_len, char **resp, size_t *resp_len,
+               size_t max, volatile int *cancel, char *err, size_t errlen) {
+    if (resp) *resp = NULL;
+    if (!take_turn(cancel)) { snprintf(err, errlen, "Stopped."); return -1; }
+    int r = post_one(url, headers, body, body_len, resp, resp_len, max, cancel, err, errlen);
+    give_turn();
+    return r;
 }
