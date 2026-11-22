@@ -96,6 +96,7 @@ void ui_toast(const char *msg);   /* a message across the top that fades after a
 void ui_intro_start(void);
 void ui_intro_skip(void);
 bool ui_intro_done(void);
+float ui_intro_seconds(void);   /* how far into the opening (-1 before it starts; large once it's over or skipped) */
 /* (a little secret: him beaming away and back, with sound_play_shimmer) */
 void ui_beam_away(void);
 bool ui_beam_done(void);

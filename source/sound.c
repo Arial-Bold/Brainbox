@@ -88,6 +88,17 @@ static s16 *synth_pcm(int n, u32 *bytes_out) {
 }
 static void synth_ambience(void) {
 	u32 bytes;
+	s16 *b = synth_pcm(ambience_length(), &bytes);
+	if (!b) return;
+	if (!ambience_render(b, ambience_length())) { free(b); return; }
+	DCFlushRange(b, bytes);
+	amb_bytes = bytes;
+	__sync_synchronize();
+	amb_buf = b;
+}
+/* (its far-off bells: made after the menu sounds, as they're only heard now and then) */
+static void synth_bells(void) {
+	u32 bytes;
 	for (int k = 0; k < AMB_BELLS && !synth_quit; k++) {
 		s16 *b = synth_pcm(amb_bell_length(), &bytes);
 		if (!b) return;
@@ -97,13 +108,6 @@ static void synth_ambience(void) {
 		__sync_synchronize();
 		bell_buf[k] = b;
 	}
-	s16 *b = synth_pcm(ambience_length(), &bytes);
-	if (!b) return;
-	if (!ambience_render(b, ambience_length())) { free(b); return; }
-	DCFlushRange(b, bytes);
-	amb_bytes = bytes;
-	__sync_synchronize();
-	amb_buf = b;
 }
 
 static void *synth_main(void *arg) {
@@ -112,9 +116,10 @@ static void *synth_main(void *arg) {
 	/* (the opening's sound is made first, ahead of everything else, so the
 	 * opening isn't kept waiting; the rest are made in the background) */
 	LWP_SetThreadPriority(LWP_GetSelf(), 30);   /* (behind his voice, too) */
+	if (!synth_quit) synth_ambience();   /* (1.4: next, so it's ready as he appears) */
 	for (unsigned k = 0; k < sizeof(synth_order) / sizeof(synth_order[0]) && !synth_quit; k++) synth(synth_order[k]);
 	if (!synth_quit) synth_shimmer();
-	if (!synth_quit) synth_ambience();
+	if (!synth_quit) synth_bells();
 	return NULL;
 }
 
@@ -212,7 +217,7 @@ void sound_ambience_tick(bool listening, bool talking) {
 	if (!ready || !amb_buf || !amb_voice) return;
 	u64 now = gettime();
 	if (!playing) {
-		if (!ui_intro_done()) return;
+		if (ui_intro_seconds() < HOLO_SET) return;   /* (1.4: from the first chime, as he appears) */
 		AESND_SetVoiceVolume(amb_voice, 0, 0);
 		AESND_PlayVoice(amb_voice, VOICE_MONO16, amb_buf, amb_bytes, AMB_RATE, 0, true);   /* (round and round) */
 		playing = true;
@@ -221,12 +226,13 @@ void sound_ambience_tick(bool listening, bool talking) {
 	}
 	/* where it's heading: silent while listening, low while he talks */
 	float target = listening ? 0 : talking ? 0.35f : 1;
-	float rate = listening ? 0.25f : target > level ? 0.012f : 0.05f;   /* (in slowly: about three seconds the first time) */
+	float rate = listening ? 0.25f : target > level ? 0.025f : 0.05f;   /* (in gently: about a second and a half the first time) */
 	level += (target - level) * rate;
-	/* soft: a quarter as loud as the sample at Menu sounds 4; louder above, quieter below; off with them */
+	/* soft: about a sixth as loud as the sample at Menu sounds 4; louder above, quieter below; off with them
+	 * (1.4: 30% quieter than before) */
 	float base = ui_set.sound_volume * 0.125f;
 	if (base > 1) base = 1;
-	base *= 0.25f;
+	base *= 0.175f;
 	u16 vol = (u16)(255 * base * level);
 	AESND_SetVoiceVolume(amb_voice, vol, vol);
 	/* now and then, a soft bell note far off (not while he talks or listens) */

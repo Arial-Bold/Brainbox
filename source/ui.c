@@ -205,6 +205,11 @@ void ui_intro_start(void) { L(); sc.intro_at = now_ms(); sc.intro = 2; U(); }
 void ui_intro_skip(void) { L(); sc.intro = 0; U(); }
 void ui_beam_away(void) { L(); u32 n = now_ms(); sc.beam_at = n ? n : 1; U(); }
 bool ui_beam_done(void) { return !sc.beam_at || now_ms() - sc.beam_at > (u32)(SHIMMER_S * 1000) + 100; }
+float ui_intro_seconds(void) {
+	if (sc.intro == 1) return -1;          /* (not started) */
+	if (sc.intro == 0) return 1000;        /* (over, or skipped) */
+	return (now_ms() - sc.intro_at) / 1000.0f;
+}
 bool ui_intro_done(void) { return sc.intro == 0 || (sc.intro == 2 && now_ms() - sc.intro_at > 1500); }
 void ui_typing(const char *t, bool masked) { L(); cpy(sc.typing, t, sizeof(sc.typing)); sc.masked = masked; U(); }
 void ui_chat(const char *you, const char *him) { L(); cpy(sc.you, you, sizeof(sc.you)); cpy(sc.him, him, sizeof(sc.him)); sc.him_scroll = 0; U(); }
