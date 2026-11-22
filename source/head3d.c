@@ -180,9 +180,26 @@ static void tube_r(const V3 *path, int n, const float *rad, int seg) {
  * wrapping), its normals worked out from the formula; turned by rot and
  * moved to at. The normals are made to point outwards (away from the middle). */
 typedef void (*SurfFn)(float u, float v, const void *ctx, V3 *out);
-static void param_surface(int nu, int nv, SurfFn f, const void *ctx, const M3 *rot, V3 at) {
+/* (1.4) The bow tie's shape never changes, only how it's turned, so each
+ * piece is worked out once and kept (slot 0..PS_SLOTS-1; -1: not kept).
+ * Working it out took most of Professor Scotty's time each frame. */
+#define PS_SLOTS 3
+#define PS_MAXV (19 * 24)
+static V3 ps_p[PS_SLOTS][PS_MAXV], ps_n[PS_SLOTS][PS_MAXV];
+static bool ps_made[PS_SLOTS];
+static void param_surface(int nu, int nv, SurfFn f, const void *ctx, const M3 *rot, V3 at, int slot) {
     if (nverts + (nu + 1) * nv > MAXV) return;
     int base = nverts;
+    if (slot >= 0 && (slot >= PS_SLOTS || (nu + 1) * nv > PS_MAXV)) slot = -1;
+    if (slot >= 0 && ps_made[slot]) {
+        for (int k = 0; k < (nu + 1) * nv; k++) {
+            V3 p = ps_p[slot][k], n = ps_n[slot][k];
+            if (rot) { p = apply(rot, p); n = apply(rot, n); }
+            vert(add(p, at), n);
+        }
+        grid(base, nv, nu + 1);
+        return;
+    }
     V3 mid = v3(0, 0, 0);
     for (int j = 0; j <= nu; j++)
         for (int i = 0; i < nv; i++) { V3 p; f((float)j / nu, (float)i / nv, ctx, &p); mid = add(mid, p); }
@@ -198,11 +215,13 @@ static void param_surface(int nu, int nv, SurfFn f, const void *ctx, const M3 *r
             f(u, v - e, ctx, &pv0); f(u, v + e, ctx, &pv1);
             V3 n = norm(cross(sub(pu1, pu0), sub(pv1, pv0)));
             if (dot(n, sub(p, mid)) < 0) n = mul(n, -1);
+            if (slot >= 0) { ps_p[slot][j * nv + i] = p; ps_n[slot][j * nv + i] = n; }
             if (rot) { p = apply(rot, p); n = apply(rot, n); }
             vert(add(p, at), n);
         }
     }
     grid(base, nv, nu + 1);
+    if (slot >= 0) ps_made[slot] = true;
 }
 
 /* a bow tie wing: from the knot (u 0) out to its end (u 1) */
@@ -1057,10 +1076,10 @@ static void build(const HeadPose *ps, bool S) {
         for (int sx = -1; sx <= 1; sx += 2) {
             M3 tilt = rotz(0.16f * sx);
             BowWing w = { sx, &tilt };
-            param_surface(18, 24, bow_wing, &w, &T, at);
+            param_surface(18, 24, bow_wing, &w, &T, at, sx < 0 ? 0 : 1);
         }
         colour(0.80f, 0.08f, 0.12f, GLOSS);
-        param_surface(10, 24, bow_knot, NULL, &T, at);
+        param_surface(10, 24, bow_knot, NULL, &T, at, 2);
     }
     }
     /* floating props: a little glowing globe of the Earth that turns, and a
@@ -1198,7 +1217,8 @@ static void light_n(float *r, float *g, float *b, int i, V3 normal) {
     if (facing < 0) facing = 0;
     float e = 1 - facing, rim = e * e * (0.6f * e + 0.4f);   /* about (1 - facing)^2.4 */
     float dx = n.x - half.x, dy = n.y - half.y, q = (dx * dx + dy * dy) / 0.012f;
-    float spec = q < 6 ? expf(-q) : 0;
+    float spec = 0;
+    if (q < 6) { float x = 1 - q * (1.0f / 16); x *= x; x *= x; x *= x; spec = x * x; }   /* (about e^-q: (1 - q/16)^16, much quicker) */
     float cr = vr[i], cg = vg[i], cb = vb[i];
     int m = vmat[i];
     float R, Gc, B;
@@ -1356,13 +1376,23 @@ void head3d_build(const HeadPose *ps) {
         M3 tilt = rotz(-0.41f);
         for (int i = 0; i < 3; i++) for (int j = 0; j < 3; j++)
             globe_rot.m[i][j] = tilt.m[i][0] * spin.m[0][j] + tilt.m[i][1] * spin.m[1][j] + tilt.m[i][2] * spin.m[2][j];
-        /* its light stays where it is while it turns: lit again with the turned normals */
-        for (int i = globe_v0; i < globe_v1; i++) {
-            float r, g, b;
-            light_n(&r, &g, &b, i, apply(&globe_rot, vn[i]));
-            acol[i] = (u32)to8(r) << 24 | (u32)to8(g) << 16 | (u32)to8(b) << 8 | 0xFF;
+        /* its light stays where it is while it turns: lit again with the turned normals.
+         * (1.4: only while it's shown, and a quarter of it each frame: it turns
+         * a full circle in 20 seconds, so that's never seen. Lighting all of it
+         * every frame cost a lot of time, even while it was hidden.) */
+        static bool was_shown;
+        static int part;
+        if (ps->props && globe_v1 > globe_v0) {
+            int step = was_shown ? 4 : 1;   /* (all of it, the first time it's shown again) */
+            for (int i = globe_v0 + (step > 1 ? part : 0); i < globe_v1; i += step) {
+                float r, g, b;
+                light_n(&r, &g, &b, i, apply(&globe_rot, vn[i]));
+                acol[i] = (u32)to8(r) << 24 | (u32)to8(g) << 16 | (u32)to8(b) << 8 | 0xFF;
+            }
+            part = (part + 1) & 3;
+            DCFlushRange(acol + globe_v0, sizeof(u32) * (globe_v1 - globe_v0));
         }
-        if (globe_v1 > globe_v0) DCFlushRange(acol + globe_v0, sizeof(u32) * (globe_v1 - globe_v0));
+        was_shown = ps->props;
     }
     pencil_bob = 0.05f * sinf(t * 3);
     show_props = ps->props;
