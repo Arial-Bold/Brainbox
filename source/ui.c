@@ -16,6 +16,7 @@
 #include <ogc/lwp_watchdog.h>
 #include <malloc.h>
 #include <math.h>
+#include "bbmath.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -164,7 +165,16 @@ static void L(void) { LWP_MutexLock(lock); }
 static void U(void) { LWP_MutexUnlock(lock); }
 static void cpy(char *dst, const char *src, size_t n) { snprintf(dst, n, "%s", src ? src : ""); }
 
-static u32 now_ms(void) { return ticks_to_millisecs(gettime()); }
+/* Milliseconds since BrainBox started. (The console's timer counts from the year
+ * 2000, so the raw value was huge: as a float it moved in quarter-second steps,
+ * which made every animation stutter, and it grows every day.) */
+static u64 clock_start;
+static u32 now_ms(void) {
+	u64 now = gettime();
+	if (!clock_start) clock_start = now;
+	/* (starting at 100 s, so "at 0" still means "long ago" to anything timed) */
+	return (u32)ticks_to_millisecs(now - clock_start) + 100000;
+}
 
 void ui_screen(int s) { L(); sc.screen = s; U(); }
 int ui_get_screen(void) { return sc.screen; }

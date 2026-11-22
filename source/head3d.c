@@ -9,6 +9,7 @@
 #include "head3d.h"
 #include "earth_map.h"
 #include <math.h>
+#include "bbmath.h"
 #include <string.h>
 #include <stdlib.h>
 #include <malloc.h>
@@ -1327,8 +1328,7 @@ static void make_static(void) {
 }
 
 static unsigned build_gen;   /* (counts builds: the moving parts' display lists are made once per build) */
-static volatile int made_for = -1;    /* which hologram the parts that never change were made for */
-bool head3d_made(int c) { return made_for == c; }
+static int made_for = -1;    /* which hologram the parts that never change were made for */
 void head3d_character(int c) { who = c == 1 ? 1 : 0; }
 int head3d_get_character(void) { return who; }
 void head3d_build(const HeadPose *ps) {
