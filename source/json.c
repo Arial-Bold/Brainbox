@@ -237,3 +237,24 @@ bool json_get_string(const char *doc, const char *path, char *out, size_t cap) {
     out[o] = 0;
     return true;
 }
+
+/* The number at path (a JSON number, or a string holding one). False if it
+ * isn't there or isn't a number. (Added in 1.4, for the weather.) */
+bool json_get_number(const char *doc, const char *path, double *out) {
+    if (!doc) return false;
+    const char *p = doc;
+    while (*path) {
+        size_t n = strcspn(path, ".");
+        p = step(p, path, n);
+        if (!p) return false;
+        path += n;
+        if (*path == '.') path++;
+    }
+    p = ws(p);
+    if (*p == '"') p++;
+    char *end;
+    double v = strtod(p, &end);
+    if (end == p) return false;
+    *out = v;
+    return true;
+}

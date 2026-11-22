@@ -24,9 +24,10 @@
 #include "net/storage.h"
 #include "net/qrcodegen.h"
 #include "net/update.h"
+#include "weather.h"
 #include "voicefetch.h"
 
-const char appversion[] = "v1.3.1";
+const char appversion[] = "v1.4";
 
 /* ---------------------------------------------------------------- input */
 
@@ -205,6 +206,7 @@ static void use_brain(void) {
 	int b = ui_set.brain;
 	ai_set((AiBrain)b, ui_set.key[b], ui_set.model[b]);
 	ai_set_search(ui_set.key[AI_GEMINI], ui_set.web_search);   /* (Google Search, through Gemini, when he needs to look something up) */
+	weather_set_home(ui_set.home_town);   /* (for the weather and the local time) */
 }
 
 /* while he's waiting for his answer: says so when he's looking it up */
@@ -403,7 +405,20 @@ static bool choose_brain(void) {
 
 /* ----------------------------------------------------------- Settings */
 
-enum { S_RES, S_SCREEN, S_WIDTH, S_OVERSCAN, S_HOLOGRAM, S_VOICE, S_SOUNDS, S_CAPTIONS, S_BRAIN, S_UPDATES, S_LAUNCHER, S_EXIT, S_ROWS };
+enum { S_RES, S_SCREEN, S_WIDTH, S_OVERSCAN, S_HOLOGRAM, S_VOICE, S_SOUNDS, S_CAPTIONS, S_BRAIN, S_HOMETOWN, S_UPDATES, S_LAUNCHER, S_EXIT, S_ROWS };
+
+/* the Home town row: the town as typed, or Auto (and the town the network suggests, once it's known) */
+static const char *hometown_value(void) {
+	static char v[96];
+	if (ui_set.home_town[0]) { snprintf(v, sizeof(v), "\x02%s", ui_set.home_town); return v; }
+	char known[120];
+	weather_home_known(known, sizeof(known));
+	char *comma = strchr(known, ',');
+	if (comma) *comma = 0;   /* (just the town: the row is short) */
+	if (known[0]) snprintf(v, sizeof(v), "\x02" "Auto (%s)", known);
+	else snprintf(v, sizeof(v), "\x02" "Auto");
+	return v;
+}
 
 /* the Updates row: how it's going */
 static const char *updates_value(void) {
@@ -444,6 +459,7 @@ static void settings_rows(void) {
 	ui_overlay_row(S_HOLOGRAM, "Hologram", ui_char_name(ui_set.character));
 	ui_overlay_row(S_CAPTIONS, "Captions", ui_set.captions ? "On" : "Off");
 	ui_overlay_row(S_BRAIN, "Brain", br);
+	ui_overlay_row(S_HOMETOWN, "Home town", hometown_value());
 	ui_overlay_row(S_UPDATES, "Updates", updates_value());
 	ui_overlay_row(S_LAUNCHER, "Launcher", lau);
 	ui_overlay_row(S_EXIT, "Exit to Launcher", NULL);
@@ -461,6 +477,7 @@ static void settings_help(int row) {
 		{ "Menu sounds", "How loud the sounds are when you move and choose. Off for none." },
 		{ "Captions", "Shows his answers in a bubble as he speaks." },
 		{ "Brain", "Which AI he uses: Groq, Google Gemini, Claude or ChatGPT. A to change or sign in." },
+		{ "Home town", "For the weather and the time. Auto guesses from the network; type a town to be exact." },
 		{ "Updates", "Opens Software Update: checks GitHub for a newer BrainBox, shows what's new and installs it." },
 		{ "Launcher", "The program at the root of the SD card that Exit to Launcher starts." },
 		{ "Exit to Launcher", "Leaves BrainBox." },
@@ -469,6 +486,10 @@ static void settings_help(int row) {
 	if (row == S_UPDATES && (update_state() == UPD_FAILED || update_state() == UPD_CHECK_FAILED) && update_error()[0])
 		ui_status("Updates", update_error());
 	if (row == S_EXIT) hints(3, "S:Select", "A:Exit", "B:Close");
+	else if (row == S_HOMETOWN) {
+		if (ui_set.home_town[0]) hints(4, "S:Select", "A:Type a town", "X:Auto", "B:Close");
+		else hints(3, "S:Select", "A:Type a town", "B:Close");
+	}
 	else if (row >= S_BRAIN && row != S_LAUNCHER) hints(3, "S:Select", "A:Open", "B:Close");
 	else hints(3, "S:Select", "A:Change", "B:Close");
 }
@@ -618,6 +639,13 @@ static void settings(void) {
 		else if (down & PAD_BUTTON_DOWN) { row = (row + 1) % S_ROWS; ui_overlay_select(row); settings_help(row); }
 		else if (down & (PAD_BUTTON_LEFT | PAD_BUTTON_RIGHT)) d = (down & PAD_BUTTON_RIGHT) ? 1 : -1;
 		if (down & (PAD_BUTTON_B | PAD_BUTTON_START)) break;
+		if ((down & PAD_BUTTON_X) && row == S_HOMETOWN && ui_set.home_town[0]) {   /* back to Auto */
+			ui_set.home_town[0] = 0;
+			weather_set_home("");
+			settings_rows();
+			settings_help(row);
+			continue;
+		}
 		if (down & PAD_BUTTON_A) {
 			if (row == S_EXIT) {
 				if (memcmp(&before, &ui_set, sizeof(ui_set))) save_settings();
@@ -627,6 +655,24 @@ static void settings(void) {
 			if (row == S_UPDATES) {
 				update_window();
 				settings_rows();
+				settings_help(row);
+				wait_release();
+				continue;
+			}
+			if (row == S_HOMETOWN) {
+				if (!kb_connected()) { ui_toast("Plug in the keyboard controller to type your town."); wait_release(); continue; }
+				char town[64];
+				snprintf(town, sizeof(town), "%s", ui_set.home_town);
+				ui_screen(UI_STAGE);
+				bool got = type_line("Your town, like Detroit or Paris, France, then press Enter", town, sizeof(town), false);
+				ui_caption(UI_CAP_NONE, "");
+				ui_screen(UI_SETTINGS);
+				if (got) {
+					snprintf(ui_set.home_town, sizeof(ui_set.home_town), "%s", town);
+					weather_set_home(ui_set.home_town);
+				}
+				settings_rows();
+				ui_overlay_select(row);
 				settings_help(row);
 				wait_release();
 				continue;

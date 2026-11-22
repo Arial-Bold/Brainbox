@@ -16,3 +16,5 @@ void buf_free(Buf *b);
  * keys and array positions), unescaped and turned into the font's characters
  * (CP-1252). False if it isn't there or isn't a string. */
 bool json_get_string(const char *doc, const char *path, char *out, size_t cap);
+/* The number at path (a number, or a string holding one). False if it isn't there. */
+bool json_get_number(const char *doc, const char *path, double *out);

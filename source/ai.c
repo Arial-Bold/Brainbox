@@ -7,6 +7,7 @@
 #include "net/netio.h"
 #include "net/thr.h"
 #include "net/storage.h"
+#include "weather.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -41,12 +42,20 @@ void ai_set_character(int c) { character = c; }
 /* added when he can look things up: the brain asks for a search instead of guessing */
 static const char *SEARCH_RULE =
     " If answering needs up-to-date information you may not have, such as news, recent events, sports results, "
-    "prices, the weather, who holds a job now, or anything after your training, reply with only the single word "
+    "prices, who holds a job now, or anything after your training, reply with only the single word "
     "SEARCH and nothing else.";
+/* always: the weather comes from BrainBox's own lookup (any brain, no key needed) */
+static const char *WEATHER_RULE =
+    " If you're asked about the weather, the temperature outside or a forecast, reply with only the word WEATHER, "
+    "followed by the place if they named one (for example: WEATHER Paris, France). For their own weather, just WEATHER.";
 /* added when it can't (or the search didn't work) */
 static const char *NO_SEARCH =
     " If a question needs up-to-date information you don't have, say kindly that you can't be sure of the latest, "
     "and share what you do know.";
+/* (and when there's no Gemini key, how to give him the web) */
+static const char *NO_SEARCH_KEY =
+    " If a question needs up-to-date information you don't have, say kindly that you can't look things up on the "
+    "web yet, and that adding a Google Gemini key under Settings, Brain, lets you; then share what you do know.";
 /* for the answer made with Google Search */
 static const char *SEARCHED =
     " You have just looked this up with Google Search. Answer from what you found, and begin with words like "
@@ -58,8 +67,11 @@ static volatile bool searching;
 void ai_set_search(const char *k, bool on) { snprintf(search_key, sizeof(search_key), "%s", k ? k : ""); search_on = on && search_key[0]; }
 bool ai_searching(void) { return searching; }
 
-static char sys[2600];   /* the instructions for this request */
-static void make_sys(const char *extra) { snprintf(sys, sizeof(sys), "%s%s%s", character == 1 ? HER : SCOTTY, SPOKEN, extra ? extra : ""); }
+static char sys[5200];   /* the instructions for this request */
+static char context[400];   /* today's date and time, and where they live (made for each question) */
+static void make_sys(const char *extra) {
+    snprintf(sys, sizeof(sys), "%s%s%s%s", character == 1 ? HER : SCOTTY, SPOKEN, context, extra ? extra : "");
+}
 
 typedef struct { bool user; char *text; } Turn;
 static Turn turns[TURNS];
@@ -71,6 +83,16 @@ static volatile AiState state;
 static char answer[ANSWER_MAX], question[1200];
 static thr_t th;
 static bool testing;
+
+/* what he knows about the here and now (on the AI's thread: finding the town can take a moment, once) */
+static void make_context(void) {
+    char when[80], where[120] = "";
+    if (!testing) weather_home(where, sizeof(where));
+    weather_local_time(when, sizeof(when));
+    int n = snprintf(context, sizeof(context), " It is now %s, local time.", when);
+    if (where[0] && n < (int)sizeof(context))
+        snprintf(context + n, sizeof(context) - n, " The person is in or near %s (use this for anything local).", where);
+}
 
 static const char *names[AI_COUNT] = { "Google Gemini", "Claude", "ChatGPT", "Groq" };
 static const char *ids[AI_COUNT] = { "gemini", "claude", "openai", "groq" };
@@ -287,13 +309,33 @@ static bool google_answer(void) {
     return false;
 }
 
-static void ask_brain(bool can_search);
-static void run_question(void) {
-    ask_brain(search_on && !testing);
+/* did the brain ask for the weather? ("WEATHER", or "WEATHER Paris, France"): the place, or "" for theirs */
+static bool wants_weather(const char *a, char *place, size_t cap) {
+    while (*a == ' ' || *a == '\n') a++;
+    if (strncmp(a, "WEATHER", 7) || strlen(a) > 100) return false;
+    a += 7;
+    if (*a && *a != ' ' && *a != ':' && *a != '\n') return false;
+    while (*a == ' ' || *a == ':') a++;
+    if (!strncasecmp(a, "in ", 3)) a += 3;
+    snprintf(place, cap, "%s", a);
+    size_t n = strlen(place);
+    while (n && strchr(" .!?\n\"'", place[n - 1])) place[--n] = 0;
+    if (!strcasecmp(place, "here") || !strcasecmp(place, "home")) place[0] = 0;
+    return true;
 }
 
-static void ask_brain(bool can_search) {
-    make_sys(can_search ? SEARCH_RULE : NO_SEARCH);
+static void ask_brain(bool can_search, const char *facts);
+static void run_question(void) {
+    make_context();
+    ask_brain(search_on && !testing, NULL);
+}
+
+static void ask_brain(bool can_search, const char *facts) {
+    static char rules[1800];
+    if (facts) snprintf(rules, sizeof(rules), "%s", facts);   /* (answering from what was looked up) */
+    else snprintf(rules, sizeof(rules), "%s%s", testing ? "" : WEATHER_RULE,
+                  can_search ? SEARCH_RULE : search_key[0] ? NO_SEARCH : NO_SEARCH_KEY);
+    make_sys(rules);
     char err[200] = "";
     const char *models_[5];
     int nm = candidates(models_);
@@ -316,12 +358,27 @@ static void ask_brain(bool can_search) {
         }
         if (status == 200 && json_get_string(resp, path, answer, sizeof(answer)) && answer[0]) {
             plain_text(answer);
+            char place[100];
+            if (!facts && !testing && wants_weather(answer, place, sizeof(place))) {   /* the weather: looked up here */
+                free(resp);
+                searching = true;
+                static char report[1200], why[200], got[1600];
+                if (weather_report(place, report, sizeof(report), why, sizeof(why)))
+                    snprintf(got, sizeof(got), " You have just looked up the weather. %s Answer from this, briefly and "
+                             "naturally, the way you'd say it aloud: the temperature with its units, what it's like, and "
+                             "the forecast if they asked about later. Don't mention Open-Meteo unless asked.", report);
+                else
+                    snprintf(got, sizeof(got), " You tried to look up the weather, but BrainBox %s. Say so kindly and briefly.", why);
+                searching = false;
+                ask_brain(false, got);
+                return;
+            }
             if (can_search && wants_search(answer)) {   /* it needs looking up */
                 free(resp);
                 searching = true;
                 bool found = google_answer();
                 searching = false;
-                if (!found) { ask_brain(false); return; }   /* (couldn't: what he knows, then) */
+                if (!found) { ask_brain(false, NULL); return; }   /* (couldn't: what he knows, then) */
                 if (!testing) { remember(true, question); remember(false, answer); }
                 state = AI_DONE;
                 return;
@@ -513,14 +570,18 @@ static void *warm_main(void *arg) {
     (void)arg;
     net_start();
     while (net_state() == NET_STARTING) thr_sleep_ms(50);
-    if (net_state() == NET_UP) netio_sync_clock();
+    if (net_state() == NET_UP) {
+        netio_sync_clock();
+        char town[120];
+        weather_home(town, sizeof(town));   /* (where they are, ready for the first question and for Settings) */
+    }
     return NULL;
 }
 void ai_warm_up(void) {
     static thr_t wt;
     static bool started;
     if (started) return;
-    started = thr_create(&wt, warm_main, NULL, 32 * 1024, 45);
+    started = thr_create(&wt, warm_main, NULL, 64 * 1024, 45);   /* (64K: finding the town uses HTTPS) */
 }
 
 void ai_ask(const char *q) {
