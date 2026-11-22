@@ -1109,11 +1109,35 @@ static void conversation(void) {
 
 /* -------------------------------------------------------------- start */
 
+/* (1.4) How long starting up takes, step by step: written to boot.txt beside
+ * the app when display.fps=1 is in brainbox.ini (with the frame timings). */
+static u64 boot_t0;
+static char boot_log[900];
+static void boot_mark(const char *what) {
+	size_t n = strlen(boot_log);
+	snprintf(boot_log + n, sizeof(boot_log) - n, "%6u ms  %s\n", (unsigned)ticks_to_millisecs(gettime() - boot_t0), what);
+}
+static void boot_mark_at(const char *what, u64 at) {
+	size_t n = strlen(boot_log);
+	if (at) snprintf(boot_log + n, sizeof(boot_log) - n, "%6u ms  %s\n", (unsigned)ticks_to_millisecs(at - boot_t0), what);
+}
+static void boot_save(void) {
+	if (!ui_set.fps || !storage_ok()) return;
+	boot_mark_at("first picture on the TV", ui_first_frame_at);
+	boot_mark_at("first picture with the hologram made", ui_head_frame_at);
+	char path[300];
+	storage_path(path, sizeof(path), "boot.txt");
+	storage_write_atomic(path, boot_log, strlen(boot_log));
+}
+
 int main(int argc, char **argv) {
+	boot_t0 = gettime();
 	ui_init();
+	boot_mark("screen started");
 	listen_init();
 	sound_init();
 	speech_init();
+	boot_mark("sound and speech started");
 	storage_set_program(argc > 0 && argv ? argv[0] : NULL);
 	if (storage_init()) {
 		char path[300];
@@ -1130,6 +1154,7 @@ int main(int argc, char **argv) {
 		ui_settings_path(path);
 		ui_settings_load();
 	}
+	boot_mark("SD card and settings read");
 	if (storage_ok()) update_remove_old();   /* (the version an update replaced, now this one has started) */
 	use_character();   /* (the hologram's voice, loaded in the background) */
 	use_brain();
@@ -1145,6 +1170,7 @@ int main(int argc, char **argv) {
 	bool skip = (PAD_ButtonsHeld(0) & PAD_TRIGGER_Z) != 0;
 	if (ui_set.intro && !skip) {
 		for (int k = 0; k < 240 && !sound_holo_ready(); k++) read_input();
+		boot_mark("opening's sound ready: opening starts");
 		ui_intro_start();
 		sound_play_holo();
 		while (!ui_intro_done()) read_input();
@@ -1152,7 +1178,9 @@ int main(int argc, char **argv) {
 	update_request_check(true);   /* (quietly: it says so only if there's a new version) */
 	/* his voice starts in the background too (a second or so: usually ready by now) */
 	if (!speech_ready()) ui_caption(UI_CAP_INFO, "Warming up\x85");
+	boot_mark("opening finished");
 	ensure_voice();
+	boot_mark("voice ready");
 	ui_caption(UI_CAP_NONE, "");
 	if (!storage_ok()) ui_toast("There's no SD card: settings won't be kept.");
 
@@ -1184,6 +1212,8 @@ int main(int argc, char **argv) {
 		                                                                 : "Hello there! I'm %s. What would you like to know today?", ui_char_name(ui_set.character));
 		say("", hello);
 	}
+	boot_mark("first words said");
+	boot_save();
 	has_mic = listen_present();
 	conversation();
 	return 0;

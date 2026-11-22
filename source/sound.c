@@ -148,7 +148,9 @@ void sound_init(void) {
 	amb_voice = AESND_AllocateVoice(sfx_cb);
 	bell_voice = AESND_AllocateVoice(sfx_cb);
 	ready = true;
-	synth_started = thr_create(&synth_th, synth_main, NULL, 32 * 1024, 110);
+	/* (1.4: just below the drawing, not above it, so the room is on the TV
+	 * while the opening's sound is made, instead of the screen staying black) */
+	synth_started = thr_create(&synth_th, synth_main, NULL, 32 * 1024, 90);
 	if (!synth_started) synth_holo();
 	if (!synth_started) for (unsigned k = 0; k < sizeof(synth_order) / sizeof(synth_order[0]); k++) synth(synth_order[k]);
 }

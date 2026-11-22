@@ -964,9 +964,11 @@ static void pose_update(float t) {
 }
 
 static void frame_setup(void);
+u64 ui_first_frame_at, ui_head_frame_at;   /* (for boot.txt) */
+static bool head_made;   /* (1.4: he's made after the first few frames, so the room shows straight away) */
 static void head_pass(float x, float alpha_k, float mirror, HeadBox *box) {
 	/* 3D, on the GPU (see head3d.c), then back to drawing in 2D */
-	if (alpha_k <= 0) { if (box) box->x0 = box->x1 = box->y0 = box->y1 = 0; return; }
+	if (alpha_k <= 0 || !head_made) { if (box) box->x0 = box->x1 = box->y0 = box->y1 = 0; return; }
 	head3d_view(vl, vt, vr, vb, ui_set.depth_flip);
 	head3d_draw(x, 240, 1, alpha_k, mirror, box);
 	frame_setup();
@@ -1076,10 +1078,18 @@ static void stage(void) {
 	STEP(2);
 	room(cx);
 	STEP(3);
-	head3d_character(ui_set.character);   /* (which hologram: made afresh when it changes) */
-	u64 pt_b = pt_now();
-	head3d_build(&pose);
-	pt_add(PT_BUILD, pt_b);
+	/* (1.4) Making him the first time takes a moment, and the screen stays
+	 * black until the first frame is drawn. So for the first few frames,
+	 * while he isn't showing yet anyway, the room is drawn without him: it's
+	 * on the TV straight away, and then he's made behind it. */
+	static int room_frames;
+	if (head_made || sc.intro != 1 || ++room_frames > 3) {
+		head3d_character(ui_set.character);   /* (which hologram: made afresh when it changes) */
+		u64 pt_b = pt_now();
+		head3d_build(&pose);
+		pt_add(PT_BUILD, pt_b);
+		head_made = true;
+	}
 	STEP(4);
 	/* (making him the first time sets up the GPU's vertex description for his
 	 * arrays: back to the 2D drawing's, before anything else is drawn) */
@@ -1686,6 +1696,8 @@ static void *video_main(void *arg) {
 		pt_add(PT_GPU, pt_d);
 		STEP(51);
 		frames_done++;
+		if (!ui_first_frame_at) ui_first_frame_at = gettime();
+		if (!ui_head_frame_at && head_made) ui_head_frame_at = gettime();
 		VIDEO_SetNextFramebuffer(xfb[fb]);
 		VIDEO_Flush();
 		u64 pt_v = pt_now();

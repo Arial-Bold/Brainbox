@@ -54,7 +54,8 @@ const char *ui_resolution_name(int r);
 
 /* --------------------------------------------------------------- lifetime */
 
-void ui_init(void);           /* video, graphics and the drawing thread (call first) */
+void ui_init(void);
+extern u64 ui_first_frame_at, ui_head_frame_at;   /* when the first frame reached the TV, and the first with him made (gettime; for boot.txt) */           /* video, graphics and the drawing thread (call first) */
 void ui_shutdown(void);       /* before rebooting or starting another program */
 
 /* ------------------------------------------------------------------ scene */
