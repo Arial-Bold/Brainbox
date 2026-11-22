@@ -178,6 +178,13 @@ static u32 now_ms(void) {
 	return (u32)ticks_to_millisecs(now - clock_start) + 100000;
 }
 
+/* where each frame's time goes, for display.fps=1 (microseconds, added up over a second) */
+enum { PT_LOCK, PT_BUILD, PT_BLOOM, PT_CPU, PT_GPU, PT_VSYNC, PT_COUNT };
+static u64 pt_sum[PT_COUNT];
+static u32 pt_shown[PT_COUNT];   /* the last second's average per frame, in tenths of a millisecond */
+static inline u64 pt_now(void) { return gettime(); }
+static inline void pt_add(int k, u64 since) { pt_sum[k] += ticks_to_microsecs(gettime() - since); }
+
 void ui_screen(int s) { L(); sc.screen = s; U(); }
 int ui_get_screen(void) { return sc.screen; }
 void ui_status(const char *a, const char *b) { L(); cpy(sc.status1, a, TXT); cpy(sc.status2, b, TXT); U(); }
@@ -1065,7 +1072,9 @@ static void stage(void) {
 	room(cx);
 	STEP(3);
 	head3d_character(ui_set.character);   /* (which hologram: made afresh when it changes) */
+	u64 pt_b = pt_now();
 	head3d_build(&pose);
+	pt_add(PT_BUILD, pt_b);
 	STEP(4);
 	/* (making him the first time sets up the GPU's vertex description for his
 	 * arrays: back to the 2D drawing's, before anything else is drawn) */
@@ -1154,7 +1163,7 @@ static void stage(void) {
 		GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
 	}
 	STEP(14);
-	bloom();
+	{ u64 pt_g = pt_now(); bloom(); pt_add(PT_BLOOM, pt_g); }
 	STEP(15);
 	/* fog round his head (the foggy-headed greeting) */
 	if (fog_now > 0.01f) {
@@ -1585,7 +1594,9 @@ static void frame_setup(void) {
 
 static void draw_frame(void) {
 	frame_setup();
+	u64 pt_l = pt_now();
 	L();
+	pt_add(PT_LOCK, pt_l);
 	stage();
 	STEP(30);
 	bool opening = sc.intro != 0;
@@ -1603,10 +1614,20 @@ static void draw_frame(void) {
 		static u32 since, frames, shown;
 		u32 now = now_ms();
 		frames++;
-		if (now - since >= 1000) { shown = frames; frames = 0; since = now; }
+		if (now - since >= 1000) {
+			for (int k = 0; k < PT_COUNT; k++) { pt_shown[k] = frames ? (u32)(pt_sum[k] / frames / 100) : 0; pt_sum[k] = 0; }
+			shown = frames; frames = 0; since = now;
+		}
 		char f[24];
 		snprintf(f, sizeof(f), "%u fps", (unsigned)shown);
 		text(24, 24, f, 12, GOLD, 0, 0);
+		/* where the time goes, in milliseconds a frame (1.4: for finding what slows him down) */
+		static const char *const names[PT_COUNT] = { "wait", "head", "glow", "draw", "gpu", "vsync" };
+		char d[120];
+		int n = 0;
+		for (int k = 0; k < PT_COUNT; k++)
+			n += snprintf(d + n, sizeof(d) - n, "%s %u.%u  ", names[k], (unsigned)(pt_shown[k] / 10), (unsigned)(pt_shown[k] % 10));
+		text(24, 40, d, 11, GOLD, 0, 0);
 	}
 	U();
 }
@@ -1649,16 +1670,22 @@ static void *video_main(void *arg) {
 				setup_gx();
 			}
 		}
+		u64 pt_c = pt_now();
 		draw_frame();
 		STEP(50);
 		GX_SetZMode(GX_TRUE, GX_ALWAYS, GX_TRUE);   /* so the copy clears depth too */
 		GX_CopyDisp(xfb[fb], GX_TRUE);
+		pt_add(PT_CPU, pt_c);
+		u64 pt_d = pt_now();
 		GX_DrawDone();
+		pt_add(PT_GPU, pt_d);
 		STEP(51);
 		frames_done++;
 		VIDEO_SetNextFramebuffer(xfb[fb]);
 		VIDEO_Flush();
+		u64 pt_v = pt_now();
 		VIDEO_WaitVSync();
+		pt_add(PT_VSYNC, pt_v);
 		fb ^= 1;
 	}
 	return NULL;
