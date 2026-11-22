@@ -572,8 +572,12 @@ static void *warm_main(void *arg) {
     while (net_state() == NET_STARTING) thr_sleep_ms(50);
     if (net_state() == NET_UP) {
         netio_sync_clock();
+        /* where they are, ready for the first question and for Settings: once
+         * the opening is over (a secure connection is hard work for the
+         * processor, and it made the opening stutter) */
+        while (!ui_intro_done()) thr_sleep_ms(100);
         char town[120];
-        weather_home(town, sizeof(town));   /* (where they are, ready for the first question and for Settings) */
+        weather_home(town, sizeof(town));
     }
     return NULL;
 }

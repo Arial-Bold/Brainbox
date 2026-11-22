@@ -219,7 +219,9 @@ void sound_ambience_tick(bool listening, bool talking) {
 	if (!ready || !amb_buf || !amb_voice) return;
 	u64 now = gettime();
 	if (!playing) {
-		if (ui_intro_seconds() < HOLO_SET) return;   /* (1.4: from the first chime, as he appears) */
+		/* (as the opening finishes: starting it during the opening, alongside
+		 * its sound, made the opening stutter) */
+		if (!ui_intro_done()) return;
 		AESND_SetVoiceVolume(amb_voice, 0, 0);
 		AESND_PlayVoice(amb_voice, VOICE_MONO16, amb_buf, amb_bytes, AMB_RATE, 0, true);   /* (round and round) */
 		playing = true;
