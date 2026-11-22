@@ -31,7 +31,7 @@
 
 /* ================================================================ settings */
 
-UiSettings ui_set = { UI_RES_AUTO, 0, 1, 0, 8, 4, 1, 3 /* Groq */, "", { "", "", "", "" }, { "", "", "", "" }, 0, 1, 0, 1, 1, UI_CHAR_SCOTTY };
+UiSettings ui_set = { UI_RES_AUTO, 0, 1, 0, 8, 4, 1, 3 /* Groq */, "", { "", "", "", "" }, { "", "", "", "" }, 0, 1, 0, 1, 1, UI_CHAR_SCOTTY, 1, "" };
 const char *ui_char_name(int c) { return c == UI_CHAR_HER ? UI_HER_NAME : "Professor Scotty"; }
 static char settings_file[300];
 static const char *brain_ids[UI_BRAINS] = { "gemini", "claude", "openai", "groq" };
@@ -71,6 +71,7 @@ void ui_settings_load(void) {
 		else if (!strcmp(line, "display.intro")) ui_set.intro = v ? 1 : 0;
 		else if (!strcmp(line, "sound.voice")) ui_set.voice_volume = clampi(v, 0, UI_VOLUME_MAX);
 		else if (!strcmp(line, "sound.menu")) ui_set.sound_volume = clampi(v, 0, UI_VOLUME_MAX);
+		else if (!strcmp(line, "sound.hologram")) ui_set.holo_sound = v ? 1 : 0;
 		else if (!strcmp(line, "chat.captions")) ui_set.captions = v ? 1 : 0;
 		else if (!strcmp(line, "chat.web_search")) ui_set.web_search = v ? 1 : 0;
 		else if (!strcmp(line, "chat.hologram")) ui_set.character = clampi(v, 0, UI_CHARS - 1);
@@ -105,6 +106,7 @@ bool ui_settings_save(void) {
 	if (ui_set.fps) n += snprintf(out + n, sizeof(out) - n, "display.fps=1\n");
 	if (!ui_set.intro) n += snprintf(out + n, sizeof(out) - n, "display.intro=0\n");
 	if (!ui_set.web_search) n += snprintf(out + n, sizeof(out) - n, "chat.web_search=0\n");
+	if (!ui_set.holo_sound) n += snprintf(out + n, sizeof(out) - n, "sound.hologram=0\n");
 	n += snprintf(out + n, sizeof(out) - n, "chat.hologram=%d\n", ui_set.character);
 	if (ui_set.home_town[0]) n += snprintf(out + n, sizeof(out) - n, "chat.home_town=%s\n", ui_set.home_town);
 	return storage_write_atomic(settings_file, out, (size_t)n);
@@ -1531,7 +1533,9 @@ static void settings_screen(void) {
 	snprintf(ver, sizeof(ver), "BrainBox %s", appversion);
 	text(px + pw - 16, py + 17, ver, 15, SOFT, 2, 220);
 	rect(px + 10, py + 31, pw - 20, 1, rgba(200, 210, 230, 71));
-	const float pitch = sc.orow_count > 12 ? 22.6f : sc.orow_count > 11 ? 24.4f : 26.5f, rh = sc.orow_count > 12 ? 21 : sc.orow_count > 11 ? 23 : 25;
+	const float pitch = sc.orow_count > 13 ? 21.2f : sc.orow_count > 12 ? 22.6f : sc.orow_count > 11 ? 24.4f : 26.5f,
+	            rh = sc.orow_count > 13 ? 20 : sc.orow_count > 12 ? 21 : sc.orow_count > 11 ? 23 : 25;
+	const float ts = sc.orow_count > 13 ? 13 : 14;   /* (a touch smaller when there are a lot of rows) */
 	for (int i = 0; i < sc.orow_count; i++) {
 		float x = px + 8, y = py + 38 + i * pitch, w = pw - 16, cy = y + rh / 2;
 		bool on = i == sc.osel;
@@ -1540,14 +1544,14 @@ static void settings_screen(void) {
 			grid_patch(x + 1, y + 1, w - 2, rh - 2, 7, 0.45f, -1, rgba(200, 235, 245, 51));
 			outline(x, y, w, rh, 3, 1, rgba(215, 225, 240, 153));
 		}
-		text(px + 20, cy, sc.orows[i].label, 14, TEXT, 0, 230);
+		text(px + 20, cy, sc.orows[i].label, ts, TEXT, 0, 230);
 		const char *v = sc.orows[i].value;
 		float right = px + pw - 20;
-		if (v[0] == 2) text(right, cy, v + 1, 14, TEXT, 2, 250);        /* information: no arrows */
+		if (v[0] == 2) text(right, cy, v + 1, ts, TEXT, 2, 250);        /* information: no arrows */
 		else if (v[0] && v[0] != 1) {                                   /* a choice: between arrows */
-			float vw = fminf(text_width(v, 14), 200);
+			float vw = fminf(text_width(v, ts), 200);
 			tri(right, cy, right - 9, cy - 7, right - 9, cy + 7, TEXT);
-			text(right - 19, cy, v, 14, TEXT, 2, 200);
+			text(right - 19, cy, v, ts, TEXT, 2, 200);
 			float lx = right - 19 - vw - 10;
 			tri(lx - 9, cy, lx, cy - 7, lx, cy + 7, TEXT);
 		}

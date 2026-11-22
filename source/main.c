@@ -405,7 +405,7 @@ static bool choose_brain(void) {
 
 /* ----------------------------------------------------------- Settings */
 
-enum { S_RES, S_SCREEN, S_WIDTH, S_OVERSCAN, S_HOLOGRAM, S_VOICE, S_SOUNDS, S_CAPTIONS, S_BRAIN, S_HOMETOWN, S_UPDATES, S_LAUNCHER, S_EXIT, S_ROWS };
+enum { S_RES, S_SCREEN, S_WIDTH, S_OVERSCAN, S_HOLOGRAM, S_VOICE, S_SOUNDS, S_HOLOSOUND, S_CAPTIONS, S_BRAIN, S_HOMETOWN, S_UPDATES, S_LAUNCHER, S_EXIT, S_ROWS };
 
 /* the Home town row: the town as typed, or Auto (and the town the network suggests, once it's known) */
 static const char *hometown_value(void) {
@@ -456,6 +456,7 @@ static void settings_rows(void) {
 	ui_overlay_row(S_OVERSCAN, "Overscan", ov);
 	ui_overlay_row(S_VOICE, "Voice volume", vv);
 	ui_overlay_row(S_SOUNDS, "Menu sounds", sv);
+	ui_overlay_row(S_HOLOSOUND, "Hologram sound", ui_set.holo_sound ? "On" : "Off");
 	ui_overlay_row(S_HOLOGRAM, "Hologram", ui_char_name(ui_set.character));
 	ui_overlay_row(S_CAPTIONS, "Captions", ui_set.captions ? "On" : "Off");
 	ui_overlay_row(S_BRAIN, "Brain", br);
@@ -475,6 +476,7 @@ static void settings_help(int row) {
 		{ "Hologram", "Who answers you: Professor Scotty, or " UI_HER_NAME ". Each has a voice of their own." },
 		{ "Voice volume", "How loud the hologram speaks. Off for none." },
 		{ "Menu sounds", "How loud the sounds are when you move and choose. Off for none." },
+		{ "Hologram sound", "The hologram's quiet hum and far-off bells in the background. Its loudness follows Menu sounds." },
 		{ "Captions", "Shows his answers in a bubble as he speaks." },
 		{ "Brain", "Which AI he uses: Groq, Google Gemini, Claude or ChatGPT. A to change or sign in." },
 		{ "Home town", "For the weather and the time. Auto guesses from the network; type a town to be exact." },
@@ -720,6 +722,7 @@ static void settings(void) {
 			sound_play(SFX_CONFIRM);
 			break;
 		case S_CAPTIONS: ui_set.captions ^= 1; break;
+		case S_HOLOSOUND: ui_set.holo_sound ^= 1; break;
 		case S_HOLOGRAM:
 			ui_set.character = (ui_set.character + UI_CHARS + d) % UI_CHARS;
 			use_character();

@@ -227,7 +227,7 @@ void sound_ambience_tick(bool listening, bool talking) {
 		next_bell = now + secs_to_ticks(7 + rand() % 6);
 	}
 	/* where it's heading: silent while listening, low while he talks */
-	float target = listening ? 0 : talking ? 0.35f : 1;
+	float target = !ui_set.holo_sound || listening ? 0 : talking ? 0.35f : 1;   /* (off: fades out) */
 	float rate = listening ? 0.25f : target > level ? 0.025f : 0.05f;   /* (in gently: about a second and a half the first time) */
 	level += (target - level) * rate;
 	/* soft: about a sixth as loud as the sample at Menu sounds 4; louder above, quieter below; off with them
@@ -241,7 +241,7 @@ void sound_ambience_tick(bool listening, bool talking) {
 	if (now >= next_bell) {
 		next_bell = now + secs_to_ticks(7 + rand() % 6);
 		int which = rand() % AMB_BELLS;
-		if (bell_voice && bell_buf[which] && !listening && !talking && level > 0.8f && vol > 0) {
+		if (bell_voice && bell_buf[which] && ui_set.holo_sound && !listening && !talking && level > 0.8f && vol > 0) {
 			AESND_SetVoiceVolume(bell_voice, vol, vol);
 			AESND_PlayVoice(bell_voice, VOICE_MONO16, bell_buf[which], bell_bytes, AMB_RATE, 0, false);
 		}

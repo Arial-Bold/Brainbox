@@ -41,6 +41,7 @@ typedef struct {
 	int intro;        /* 1 = the opening (him switching on) when BrainBox starts (display.intro=0 in brainbox.ini: off) */
 	int web_search;   /* 1 = he looks things up with Google when he needs to (needs Gemini signed in; chat.web_search=0 in brainbox.ini: off) */
 	int character;    /* which hologram: UI_CHAR_SCOTTY or UI_CHAR_HER (chat.hologram in brainbox.ini) */
+	int holo_sound;   /* 1 = the hologram's quiet background sound (the hum and far-off bells); sound.hologram=0: off */
 	char home_town[64];/* for the weather and the local time: "" = Auto (guessed from the network); chat.home_town */
 } UiSettings;
 
