@@ -283,11 +283,35 @@ static void put(const s16 *x, int n) {
     }
 }
 
+static int streamed_upto;   /* (1.5) how much of this sentence's wave has been handed over so far */
 static int streamed(const cst_wave *w, int start, int size, int last, cst_audio_streaming_info *asi) {
     (void)last; (void)asi;
     if (cur_gen != gen) return CST_AUDIO_STREAM_STOP;   /* (cut off: stop making the rest) */
     put(w->samples + start, size);
+    if (start + size > streamed_upto) streamed_upto = start + size;
     return cur_gen == gen ? CST_AUDIO_STREAM_CONT : CST_AUDIO_STREAM_STOP;
+}
+
+/* (1.5) With display.fps=1 in brainbox.ini: what was said, sentence by
+ * sentence, in speech.txt beside the app (for finding words that go missing).
+ * Kept in memory as it's spoken, written once the answer is finished. */
+static char slog[6000];
+static void speech_log(const char *sentence, int samples, int tail, bool failed) {
+    if (!ui_set.fps) return;
+    size_t n = strlen(slog);
+    if (n > sizeof(slog) - 600) return;
+    snprintf(slog + n, sizeof(slog) - n, "%s%5d samples%s%s | %s\n", failed ? "FAILED " : "", samples,
+             tail ? " (+ end recovered)" : "", "", sentence);
+    if (tail) { n = strlen(slog); snprintf(slog + n - 1, sizeof(slog) - n + 1, "   [end: %d samples]\n", tail); }
+}
+static void speech_log_save(u32 played_to) {
+    if (!ui_set.fps || !slog[0] || !storage_ok()) { slog[0] = 0; return; }
+    char path[300];
+    size_t n = strlen(slog);
+    snprintf(slog + n, sizeof(slog) - n, "(written to the ring up to %u, played to %u)\n\n", (unsigned)wpos, (unsigned)played_to);
+    storage_path(path, sizeof(path), "speech.txt");
+    storage_write_atomic(path, slog, strlen(slog));
+    slog[0] = 0;
 }
 
 static void *talk_main(void *arg) {
@@ -359,9 +383,37 @@ static void *talk_main(void *arg) {
         while (g == gen && next_sentence(&p, sentence, sizeof(sentence), first)) {
             first = false;
             cst_wave *w = NULL;
+            streamed_upto = 0;
+            bool failed = false;
             cst_errjmp = &jb;
             if (!setjmp(jb)) w = flite_text_to_wave(sentence, voice);   /* (into the ring as it's made: streamed) */
+            else failed = true;
             cst_errjmp = NULL;
+            /* (1.5) Anything of the wave that wasn't handed over as it was made
+             * (the very end of a sentence can be left in Flite's buffer): put
+             * in now, so the last words aren't lost. */
+            int tail = 0;
+            if (w && g == gen && w->num_samples > streamed_upto) {
+                tail = w->num_samples - streamed_upto;
+                put(w->samples + streamed_upto, tail);
+            }
+            /* (1.5) and a sentence Flite couldn't say (an odd character in it):
+             * tried again with only plain letters, numbers and punctuation */
+            if (failed && g == gen) {
+                char plain[400];
+                size_t o = 0;
+                for (const char *c = sentence; *c && o < sizeof(plain) - 1; c++) {
+                    unsigned char u = (unsigned char)*c;
+                    plain[o++] = (u >= 32 && u < 127) ? (char)u : ' ';
+                }
+                plain[o] = 0;
+                streamed_upto = 0;
+                cst_errjmp = &jb;
+                if (!setjmp(jb)) w = flite_text_to_wave(plain, voice);
+                cst_errjmp = NULL;
+                if (w && g == gen && w->num_samples > streamed_upto) put(w->samples + streamed_upto, w->num_samples - streamed_upto);
+            }
+            speech_log(sentence, w ? w->num_samples : -1, tail, failed);
             if (w) delete_wave(w);
             if (g != gen) break;
             done_chars = (size_t)(p - text);
@@ -371,6 +423,7 @@ static void *talk_main(void *arg) {
         acc_n = 0;
         holding = false;
         making = false;
+        speech_log_save(rpos);
     }
     return NULL;
 }

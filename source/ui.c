@@ -944,7 +944,7 @@ static void bloom(void) {
 static HeadPose pose;
 /* (1.5) the quiz's abacus: its width, its space from him, and how much it shows (0..1; he steps aside to make room) */
 #define QB_W 128
-#define QB_GAP 26
+#define QB_GAP 12
 static float qb_k;
 static float qb_safe_left(void) { return (ui_set.widescreen ? 320 - 640.0f * 4 / 3 / 2 : 0) + 10; }   /* (inside the picture, in 4:3 or 16:9) */
 static float mouth, px_now = 320, think_now, think_secs, brows_now, fog_now;
@@ -1032,7 +1032,7 @@ static void quiz_board(float head_left, float t) {
 	/* the size: rows of a name line and a rod, inside a brass frame */
 	const float FRAME = 5, PAD = 6, NAME_H = 12, ROD_H = 10, ROW_GAP = 6, W = QB_W;
 	float row_h = NAME_H + 2 + ROD_H;
-	float H = 2 * (FRAME + PAD) + np * row_h + (np - 1) * ROW_GAP;
+	float H = 2 * (FRAME + PAD) + 4 * row_h + 3 * ROW_GAP;   /* (always four rods tall, however many are playing: spare rods stay empty) */
 	float x = head_left - QB_GAP - W, y = 196 + 2.0f * sinf(t * 1.4f);
 	if (x < qb_safe_left()) x = qb_safe_left();   /* (never off the edge of the screen) */
 	if (y + H > 372) y = 372 - H;   /* (always clear of the caption bar) */
@@ -1084,6 +1084,14 @@ static void quiz_board(float head_left, float t) {
 			rrect_v(bead_x[p][i], rod_y - ROD_H / 2 + 0.5f, bw, ROD_H - 1, bw / 2, KA(mix(c, rgba(255, 255, 255, 255), 0.25f)), KA(c));
 		}
 		if (pulse[p] > 0) outline(rx - 3, ry - 2, rw + 6, row_h + 4, 4, 1.5f, KA(alpha(GOLD, pulse[p])));
+	}
+	/* the spare rods: no name, their beads resting at the left, faint */
+	for (int p = np; p < 4; p++) {
+		float ry = iy + PAD + p * (row_h + ROW_GAP);
+		float rod_y = ry + NAME_H + 2 + ROD_H / 2;
+		rect(rx, rod_y - 1, rw, 2, KA(rgba(0xc7, 0xa2, 0x4a, 140)));
+		for (int i = 0; i < max; i++)
+			rrect_v(rx + i * (bw + gap), rod_y - ROD_H / 2 + 0.5f, bw, ROD_H - 1, bw / 2, KA(rgba(0x7a, 0x6c, 0x8c, 110)), KA(rgba(0x5a, 0x4c, 0x6c, 110)));
 	}
 	/* faint hologram scanlines over it */
 	for (float sy = y + 2; sy < y + H; sy += 4) rect(x, sy, W, 1, KA(rgba(170, 230, 255, 18)));
