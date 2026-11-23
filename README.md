@@ -41,13 +41,26 @@ Groq, Google Gemini and ChatGPT can listen. When Groq is signed in, it always do
 
 Ask "what's the weather?", "will it snow tomorrow?" or "how cold is it in Paris?" and he looks it up and answers in his own words, with today's conditions and a three-day forecast. This works with every brain and needs no extra account: the weather comes from [Open-Meteo](https://open-meteo.com/), which is free and needs no key.
 
+When you ask Professor Scotty about the weather somewhere, his globe turns to show the place, with a little glowing mark on it.
+
 He also knows today's date and the local time, so "what day is it?" or "how long until Christmas?" just work.
 
-For your own weather he needs to know where you are. Settings > Home town is Auto at first: BrainBox guesses your town from your internet connection (with GeoJS, or ipwho.is if that doesn't answer), and the row shows the town it found. Internet providers' guesses can be a town or two off, so if it's wrong, choose Home town and type yours with the keyboard controller ("Detroit", or "Paris, France" to be exact). X puts it back to Auto. Temperatures are in Fahrenheit in the US and Celsius elsewhere.
+For your own weather he needs to know where you are. Settings > Home town is Auto at first: BrainBox guesses your town from your internet connection (with GeoJS, or ipwho.is if that doesn't answer), and the row shows the town it found. Internet providers' guesses can be a town or two off, so if it's wrong, choose Home town and type yours with the keyboard controller ("Detroit", or "Paris, France" to be exact). X puts it back to Auto. Once found, the town is kept in `hometown.txt` beside the app, so it isn't looked up again each time BrainBox starts (on Auto it's checked again once a month, in case you've moved; delete the file to look it up again). Temperatures are in Fahrenheit in the US and Celsius elsewhere.
 
 ## Looking things up
 
+Every brain can look things up on Wikipedia, with no extra account or key: when a question needs facts about a particular person, place, book, film or event, he looks it up and answers starting with something like "According to Wikipedia". "What's in the news?" (or "any news about space?") gets the latest headlines from Google News, read out in his own words.
+
+
 With Google Gemini signed in (Settings > Brain; it can be signed in alongside Groq, whichever AI is his brain), Professor Scotty can look things up with Google Search when a question needs today's information: news, recent events, scores, prices. Your home town is passed along too, so "near me" questions get local answers. His brain decides when; while he searches, the bar says "Let me look that up on the web", and his answer starts with something like "According to Google". The searches use Gemini 2.5 Flash, which includes up to 500 searches a day on Google's free allowance. `chat.web_search=0` in `brainbox.ini` turns this off. Without a Gemini key, he says he can't look things up yet and tells you how to turn it on.
+
+## Quiz night
+
+Say "let's play a quiz" (or "quiz me on dinosaurs", or "trivia about space") and the hologram hosts a quiz game. Professor Scotty or Dr. Brahms asks the topic (unless you named one), how many are playing (up to four), each player's name, and how many questions each (five, ten or fifteen). Then the questions go round in turn: say your answer into the microphone (hold A or the mic's button) or type it, and the host judges it kindly, with small slips and other ways of saying the same thing allowed. "Pass" or "I don't know" moves on. X hears the question again, and B stops the quiz. The scores are kept on a little brass abacus that floats off to the host's left in place of the globe, with a gold bead sliding across for each point, and the winner is announced at the end. The questions are written fresh each time by the AI you chose, so every quiz is different. Answering needs the microphone or the keyboard controller; to answer out loud with Claude as his brain, also sign in to Groq (as for talking to him).
+
+## He remembers you
+
+BrainBox remembers a little about you from one day to the next: your name once you've told him, things you mention about yourself (your dog's name, the books you love, a trip you're planning), and the last few things you asked about. He brings them up now and then when they fit, and might greet you by name. It's kept in `memory.txt` beside the app on the SD card, and only ever sent to the AI you chose, along with your questions. Say "forget everything you know about me" to clear it, or delete the file; `chat.memory=0` in `brainbox.ini` turns it off.
 
 ## Controls
 
@@ -71,6 +84,7 @@ With Google Gemini signed in (Settings > Brain; it can be signed in alongside Gr
 - **Voice volume**: how loud he speaks, from Off to 10 (10 is a little louder than the voice as it's made).
 - **Menu sounds**: how loud the sounds are when you move and choose, from Off to 10. The hologram's quiet background sound (a soft, slowly breathing chord with the odd far-off bell, made on the GameCube like his voice) follows it too: it dips while he talks and goes silent while the microphone listens.
 - **Hologram**: Professor Scotty or Dr. Brahms.
+- **Hologram sound**: the hologram's quiet background hum and far-off bells, On or Off (how loud it is follows Menu sounds).
 - **Captions**: shows the answers in a bubble as they're spoken.
 - **Brain**: which AI he uses (Groq, Google Gemini, Claude or ChatGPT), and signing in to it.
 - **Home town**: where you are, for the weather and the local time. Auto guesses from your internet connection; A types a town (with the keyboard controller), X goes back to Auto.
@@ -78,7 +92,7 @@ With Google Gemini signed in (Settings > Brain; it can be signed in alongside Gr
 - **Launcher**: which .dol at the root of the SD card Exit to Launcher starts.
 - **Exit to Launcher**: leaves BrainBox.
 
-A few more can be set by hand in `brainbox.ini`: `groq.model`, `gemini.model`, `claude.model` and `openai.model` choose a different model for each service (empty for the usual one), `display.glow=0` turns the glow off, `chat.web_search=0` stops him looking things up with Google, and `display.intro=0` skips the opening (Professor Scotty switching on as a hologram, with its sound). Holding Z as BrainBox starts skips it just that once.
+A few more can be set by hand in `brainbox.ini`: `groq.model`, `gemini.model`, `claude.model` and `openai.model` choose a different model for each service (empty for the usual one), `display.glow=0` turns the glow off, `chat.web_search=0` stops him looking things up with Google, `chat.memory=0` stops him remembering you between visits, `display.fps=1` shows the frame rate and how each frame's time is spent, and writes `boot.txt` (how long starting up took) and `speech.txt` (the last answer, sentence by sentence) beside the app, for tracking down problems, and `display.intro=0` skips the opening (Professor Scotty switching on as a hologram, with its sound). Holding Z as BrainBox starts skips it just that once.
 
 ## Updates
 
@@ -106,6 +120,7 @@ Every push to GitHub builds it too (see the Actions tab), and the result is a zi
 - libogc2 and libdvm: Extrems and the devkitPro team
 - Font: M PLUS Rounded 1c (SIL Open Font License, see `tools/fonts/OFL.txt`)
 - [QR Code generator library](https://www.nayuki.io/page/qr-code-generator-library): Project Nayuki (MIT)
+- Facts from [Wikipedia](https://en.wikipedia.org/) (CC BY-SA 4.0); headlines from Google News (or BBC News)
 - Weather data by [Open-Meteo.com](https://open-meteo.com/) (CC BY 4.0); town lookup from your connection by [GeoJS](https://www.geojs.io/) and [ipwho.is](https://ipwho.is/)
 - The globe's map: drawn from the [world.geo.json](https://github.com/johan/world.geo.json) country outlines (public domain)
 
