@@ -51,7 +51,7 @@ static const char *SEARCH_RULE =
 static const char *WEATHER_RULE =
     " If you're asked about the weather, the temperature outside or a forecast, reply with only the word WEATHER, "
     "followed by the place if they named one (for example: WEATHER Paris, France). For their own weather, just WEATHER.";
-/* (1.5) always: facts from Wikipedia, and the news, looked up by BrainBox itself (any brain, no key needed) */
+/* (1.4) always: facts from Wikipedia, and the news, looked up by BrainBox itself (any brain, no key needed) */
 static const char *WIKI_RULE =
     " If answering needs facts you aren't sure of about a specific person, place, organization, book, film, game, "
     "invention or event (including who holds a job now), reply with only the word WIKI followed by what to look up "
@@ -59,7 +59,7 @@ static const char *WIKI_RULE =
 static const char *NEWS_RULE =
     " If they ask for the news or the headlines, reply with only the word NEWS, followed by the topic if they named "
     "one (for example: NEWS space exploration).";
-/* (1.5) remembering them from one day to the next */
+/* (1.4) remembering them from one day to the next */
 static const char *MEMORY_RULE =
     " If they tell you something about themselves worth remembering next time (family, pets, interests, plans, "
     "where they're from), add it at the very end of your reply on a line of its own, like: NOTE: has a dog called Max. "

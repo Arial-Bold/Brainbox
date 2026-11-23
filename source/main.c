@@ -28,7 +28,7 @@
 #include "memory.h"
 #include "voicefetch.h"
 
-const char appversion[] = "v1.5";
+const char appversion[] = "v1.4";
 
 /* ---------------------------------------------------------------- input */
 
@@ -1115,7 +1115,7 @@ static void conversation(void) {
 
 /* ------------------------------------------------------- saying hello */
 
-/* (1.5) What they say when BrainBox starts: a few to choose from, some for
+/* (1.4) What they say when BrainBox starts: a few to choose from, some for
  * the time of day, and some for when they remember your name. */
 static const char *const HELLO_SCOTTY[] = {
 	"Hello there! I'm Professor Scotty. What would you like to know today?",

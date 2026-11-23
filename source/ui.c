@@ -969,7 +969,7 @@ static void pose_update(float t) {
 
 static void frame_setup(void);
 u64 ui_first_frame_at, ui_head_frame_at;   /* (for boot.txt) */
-/* (1.5) each frame of the opening, for boot.txt: how long it took in all, and its parts (tenths of a ms) */
+/* (1.4) each frame of the opening, for boot.txt: how long it took in all, and its parts (tenths of a ms) */
 #define IF_MAX 160
 static u16 if_total[IF_MAX], if_head[IF_MAX], if_cpu[IF_MAX], if_gpu[IF_MAX];
 static int if_n;

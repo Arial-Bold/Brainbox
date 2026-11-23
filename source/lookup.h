@@ -1,5 +1,5 @@
 /* lookup.h - looking things up for the brain without any account or key
- * (added in 1.5): Wikipedia for facts, Google News for headlines. The
+ * (added in 1.4): Wikipedia for facts, Google News for headlines. The
  * lookups block: call them on the AI's thread, never the screen's. */
 #pragma once
 #include <stdbool.h>

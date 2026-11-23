@@ -260,7 +260,7 @@ bool json_get_number(const char *doc, const char *path, double *out) {
 }
 
 /* UTF-8 text (like a web page's) into the font's characters (CP-1252), as
- * json_get_string does. (Added in 1.5, for the news.) */
+ * json_get_string does. (Added in 1.4, for the news.) */
 void utf8_to_cp1252(const char *in, char *out, size_t cap) {
     size_t o = 0;
     for (const char *p = in; *p && o + 1 < cap; p++) {

@@ -1,5 +1,5 @@
 /* memory.h - what the hologram remembers about the person from one day to
- * the next (added in 1.5): their name, a few things they've told him, and
+ * the next (added in 1.4): their name, a few things they've told him, and
  * what they asked about lately. Kept in memory.txt beside the app on the SD
  * card, and only ever sent to the AI they chose, with their questions.
  * chat.memory=0 in brainbox.ini turns it off; asking him to forget clears it. */

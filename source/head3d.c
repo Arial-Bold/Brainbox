@@ -46,7 +46,7 @@ static V3 apply(const M3 *m, V3 v) {
 
 #define GLOBE_C v3(-1.08f, 0.18f, -0.30f)
 static int globe_v0, globe_v1;   /* the globe's vertices (lit again each frame as it turns) */
-/* (1.5) the globe turning to show a place (the weather's), with a glowing mark on it */
+/* (1.4) the globe turning to show a place (the weather's), with a glowing mark on it */
 static volatile int point_req;           /* bumped by head3d_globe_point */
 static volatile float point_lat, point_lon, point_hold;
 static float mark_k;                     /* 0..1: how much the mark shows */
@@ -1093,7 +1093,7 @@ static void build(const HeadPose *ps, bool S) {
      * head3d_draw), so its land stays put on it. */
     {
         V3 gc0 = GLOBE_C;
-        if (D && mark_k > 0.01f) {   /* (1.5) the mark on the place being shown: a little glowing bead, pulsing */
+        if (D && mark_k > 0.01f) {   /* (1.4) the mark on the place being shown: a little glowing bead, pulsing */
             int was = cur_grp;
             cur_grp = G_GLOBE;
             float r = (0.012f + 0.004f * sinf(t * 6)) * mark_k;
@@ -1384,7 +1384,7 @@ void head3d_build(const HeadPose *ps) {
     globe_bob = 0.04f * sinf(t * 1.4f);
     {
         /* a turn every 20 seconds, west to east, on an axis tilted like the Earth's
-         * (1.5: or turning to show a place, and holding it there a while) */
+         * (1.4: or turning to show a place, and holding it there a while) */
         static float ga, last_t, point_target, point_until;
         static int point_seen;
         float dt = last_t > 0 ? t - last_t : 0;
