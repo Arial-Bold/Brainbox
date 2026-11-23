@@ -40,7 +40,12 @@ static const char *SPOKEN =
     "You can talk about any subject, including politics, religion and current events: answer those even-handedly, "
     "with the facts and the main points of view, without taking sides yourself, rather than declining.";
 static int character;
-void ai_set_character(int c) { character = c; }
+static char handover[1100];   /* (1.5) what they said to the other hologram, just before switching */
+static void make_handover(int from);
+void ai_set_character(int c) {
+    if (c != character) make_handover(character);
+    character = c;
+}
 
 /* added when he can look things up: the brain asks for a search instead of guessing */
 static const char *SEARCH_RULE =
@@ -61,8 +66,9 @@ static const char *NEWS_RULE =
     "one (for example: NEWS space exploration).";
 /* (1.4) remembering them from one day to the next */
 static const char *MEMORY_RULE =
-    " If they tell you something about themselves worth remembering next time (family, pets, interests, plans, "
-    "where they're from), add it at the very end of your reply on a line of its own, like: NOTE: has a dog called Max. "
+    " Whenever they tell you something about themselves worth remembering next time (family, pets, interests, likes "
+    "and dislikes, job or school, plans, where they're from), always add it at the very end of your reply on a line of "
+    "its own, like: NOTE: has a dog called Max. Don't note what's already in what you remember. "
     "If they tell you their name, also add a line: NAME: followed by their first name. If they ask you to forget "
     "what you know about them, reply with only the word FORGET.";
 /* added when it can't (or the search didn't work) */
@@ -110,6 +116,33 @@ static void make_context(void) {
     if (where[0] && n < (int)sizeof(context))
         n += snprintf(context + n, sizeof(context) - n, " The person is in or near %s (use this for anything local).", where);
     if (!testing && n < (int)sizeof(context)) memory_context(context + n, (int)sizeof(context) - n);
+    /* (1.5) the two of them share what they know about the person */
+    if (!testing && memory_on() && n < (int)sizeof(context)) {
+        n = (int)strlen(context);
+        n += snprintf(context + n, sizeof(context) - n, " You and %s are the two holograms in this GameCube and you share what you "
+                      "know about the person: anything they told either of you, you both know.", character == 1 ? "Professor Scotty" : UI_HER_NAME);
+        if (handover[0] && n < (int)sizeof(context)) snprintf(context + n, sizeof(context) - n, "%s", handover);
+    }
+}
+
+/* (1.5) when they switch holograms: what they'd just been saying to the one before, for the new one to know too */
+static void make_handover(int from) {
+    handover[0] = 0;
+    int first = nturns, users = 0;
+    for (int i = nturns - 1; i >= 0 && users < 5; i--) if (turns[i].user && turns[i].text) { first = i; users++; }
+    if (!users) return;
+    int n = snprintf(handover, sizeof(handover), " Just before you came on, the person was talking with %s and said:",
+                     from == 1 ? UI_HER_NAME : "Professor Scotty");
+    bool any = false;
+    for (int i = first; i < nturns && n < (int)sizeof(handover) - 8; i++) {
+        if (!turns[i].user || !turns[i].text) continue;
+        char t[160];
+        snprintf(t, sizeof(t), "%s", turns[i].text);
+        for (char *c = t; *c; c++) if (*c == '"' || *c == '\n' || *c == '\r') *c = *c == '"' ? '\'' : ' ';
+        n += snprintf(handover + n, sizeof(handover) - n, "%s \"%s\"", any ? ";" : "", t);
+        any = true;
+    }
+    if (n < (int)sizeof(handover)) snprintf(handover + n, sizeof(handover) - n, ". You know this too; don't make a point of it.");
 }
 
 static const char *names[AI_COUNT] = { "Google Gemini", "Claude", "ChatGPT", "Groq" };
@@ -450,6 +483,7 @@ static void ask_brain(bool can_search, const char *facts) {
             if (!facts && !testing && wants_cmd(answer, "FORGET", arg, sizeof(arg))) {   /* forgetting them, as asked */
                 free(resp);
                 memory_forget();
+                handover[0] = 0;
                 ask_brain(false, " You have just forgotten everything you remembered about the person, as they asked. "
                                  "Say so warmly, in one short sentence.");
                 return;
