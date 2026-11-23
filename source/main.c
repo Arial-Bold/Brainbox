@@ -1081,7 +1081,7 @@ static void host(const char *line, bool wait) {
 static bool quiz_stop;
 static bool quiz_wait(const char *caption) {
 	ui_caption(UI_CAP_THINK, caption);
-	ui_pose(0.8f, 0, true);
+	ui_pose(1, 0, true);   /* (fully thinking, as for a question: her spectacles catch the light) */
 	hints(1, "B:Stop the quiz");
 	bool ok = true;
 	while (ai_state() == AI_BUSY) {
@@ -1106,7 +1106,7 @@ static int quiz_reply(const char *prompt, char *out, int cap) {
 			ui_caption(UI_CAP_INFO, "Plug in a microphone or the keyboard controller to answer");
 			hints(1, "B:Stop the quiz");
 		} else {
-			ui_caption(UI_CAP_INFO, prompt);
+			ui_caption(UI_CAP_NONE, "");   /* (1.5: no caption: the bubble already asks it, and the hints say how to answer) */
 			if (can_hear && kb) hints(4, "A:Hold and say it", "Y:Type it", "X:Hear it again", "B:Stop the quiz");
 			else if (can_hear) hints(3, "A:Hold and say it", "X:Hear it again", "B:Stop the quiz");
 			else hints(3, "KB:Type it, then Enter", "X:Hear it again", "B:Stop the quiz");
