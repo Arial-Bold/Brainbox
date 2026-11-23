@@ -28,7 +28,7 @@
 #include "memory.h"
 #include "voicefetch.h"
 
-const char appversion[] = "v1.4";
+const char appversion[] = "v1.5";
 
 /* ---------------------------------------------------------------- input */
 
@@ -892,9 +892,12 @@ static bool wait_for_brain(void) {
 }
 
 /* asks the question and has him answer it */
+static void quiz(const char *request);
+static bool wants_quiz(const char *q);
 static void ask(const char *q) {
 	asked_once = true;
 	if (easter_egg(q)) return;
+	if (wants_quiz(q)) { ui_chat(q, ""); quiz(q); return; }
 	ui_layout(1);
 	ui_chat(q, "");
 	ui_caption(UI_CAP_THINK, "Hmm, let me think about that\x85");
@@ -1004,7 +1007,7 @@ static void listen_and_ask(void) {
 		read_input();
 		if (!shown && ai_heard()) {
 			shown = true;
-			if (is_egg(ai_heard())) {
+			if (is_egg(ai_heard()) || wants_quiz(ai_heard())) {
 				/* (it isn't sent on to the AI: see ai_hear_filter, so it's finished with in a moment) */
 				egg = true;
 				while (ai_state() == AI_BUSY) read_input();
@@ -1022,10 +1025,485 @@ static void listen_and_ask(void) {
 	const char *q = ai_heard() ? ai_heard() : "";
 	static char heard[1200];
 	snprintf(heard, sizeof(heard), "%s", q);
-	if (egg) { ui_pose(0, 0.6f, true); ui_caption(UI_CAP_NONE, ""); easter_egg(heard); return; }   /* (his answer to it, still coming, is dropped) */
+	if (egg) {   /* (his answer to it, still coming, is dropped) */
+		ui_pose(0, 0.6f, true);
+		ui_caption(UI_CAP_NONE, "");
+		if (!is_egg(heard)) quiz(heard);   /* (the quiz: not sent on to the AI either) */
+		else easter_egg(heard);
+		return;
+	}
 	if (cancelled) { say(heard, "Oh, never mind then! Ask me anything else."); return; }
 	if (ai_heard_nothing()) { say("", "Hmm? I didn't quite catch that. Hold A, speak up a little, and let go when you're done!"); return; }
 	answered(heard);
+}
+
+/* ------------------------------------------------------------ the quiz (1.5) */
+
+/* "Quiz me", "let's play a quiz", "trivia about space"... */
+static bool quiz_listening;   /* what's heard is only written down, not sent on to the AI (see hear_filter) */
+static bool wants_quiz(const char *q) { return says(q, "quiz") || says(q, "trivia"); }
+static bool hear_filter(const char *heard) {
+	if (quiz_listening) return true;
+	return is_egg(heard) || wants_quiz(heard);
+}
+
+#define QUIZ_PLAYERS 4
+#define QUIZ_QMAX 160
+#define QUIZ_AMAX 80
+typedef struct { char q[QUIZ_QMAX], a[QUIZ_AMAX]; } QuizItem;
+static QuizItem quiz_items[16];
+static int quiz_nitems, quiz_next;
+
+/* the host's lines: Professor Scotty's, or hers */
+static const char *qline(const char *scotty, const char *her) { return ui_set.character == UI_CHAR_HER ? her : scotty; }
+
+/* says it (with the bubble), waits while it's said if wait */
+static void host(const char *line, bool wait) {
+	ui_layout(1);
+	ui_chat("", line);
+	speech_say(line);
+	if (wait) while (speech_busy()) read_input();
+}
+
+/* Waits for the AI, with a caption; B gives up (false, and quiz_stop is set) */
+static bool quiz_stop;
+static bool quiz_wait(const char *caption) {
+	ui_caption(UI_CAP_THINK, caption);
+	ui_pose(0.8f, 0, true);
+	hints(1, "B:Stop the quiz");
+	bool ok = true;
+	while (ai_state() == AI_BUSY) {
+		read_input();
+		if (down & PAD_BUTTON_B) { ok = false; quiz_stop = true; break; }
+	}
+	ui_pose(0, 0.3f, true);
+	ui_caption(UI_CAP_NONE, "");
+	return ok;
+}
+
+/* One reply from the player: said into the microphone (held A, or its own
+ * button) or typed on the keyboard. 1: got it (in out); 2: X, hear it again;
+ * -1: B, stop the quiz. */
+static int quiz_reply(const char *prompt, char *out, int cap) {
+	AiBrain ear;
+	bool can_hear = has_mic && pick_ear(&ear);
+	for (;;) {
+		out[0] = 0;
+		bool kb = kb_connected();
+		if (!can_hear && !kb) {
+			ui_caption(UI_CAP_INFO, "Plug in a microphone or the keyboard controller to answer");
+			hints(1, "B:Stop the quiz");
+		} else {
+			ui_caption(UI_CAP_INFO, prompt);
+			if (can_hear && kb) hints(4, "A:Hold and say it", "Y:Type it", "X:Hear it again", "B:Stop the quiz");
+			else if (can_hear) hints(3, "A:Hold and say it", "X:Hear it again", "B:Stop the quiz");
+			else hints(3, "KB:Type it, then Enter", "X:Hear it again", "B:Stop the quiz");
+		}
+		static bool mic_was;
+		for (;;) {
+			read_input();
+			if (down & PAD_BUTTON_B) { speech_stop(); ui_caption(UI_CAP_NONE, ""); wait_release(); return -1; }
+			if (down & PAD_BUTTON_X) { ui_caption(UI_CAP_NONE, ""); return 2; }
+			/* typing: a key, or Y (or A without a microphone) */
+			KbEvent e;
+			bool type = false;
+			while (kb_connected() && kb_next(&e)) {
+				if (e.key == KB_CHAR && (unsigned char)e.ch > 32) { size_t n = strlen(out); if ((int)n < cap - 1) { out[n] = e.ch; out[n + 1] = 0; } type = true; }
+				if (e.key == KB_ENTER) type = true;
+			}
+			if (kb_connected() && ((down & PAD_BUTTON_Y) || ((down & PAD_BUTTON_A) && !can_hear))) type = true;
+			if (type) {
+				speech_stop();
+				bool got = type_line(prompt, out, cap, false);
+				ui_caption(UI_CAP_NONE, "");
+				if (got && out[0]) return 1;
+				break;   /* (cancelled: ask again) */
+			}
+			/* talking: A held, or the microphone's button */
+			bool mic_btn = can_hear && listen_button();
+			bool mic_pressed = mic_btn && !mic_was;
+			mic_was = mic_btn;
+			if (can_hear && ((down & PAD_BUTTON_A) || mic_pressed)) {
+				speech_stop();
+				listening_now = true;
+				for (int i = 0; i < 10; i++) read_input();
+				if (!listen_start()) { listening_now = false; ui_toast("The microphone isn't answering. Is it pushed all the way in?"); break; }
+				ui_caption(UI_CAP_LISTEN, "I'm listening\x85");
+				hints(1, "MIC:Let go when you're done");
+				for (;;) {
+					read_input();
+					listen_update();
+					ui_listen_level(listen_level());
+					if (!(held & PAD_BUTTON_A) && !listen_button()) break;
+					if (listen_full()) break;
+				}
+				const short *pcm;
+				int n;
+				bool got = listen_stop(&pcm, &n);
+				listening_now = false;
+				ui_listen_level(0);
+				mic_was = listen_button();
+				if (!got) { ui_toast("I didn't hear anything. Hold the button while you talk."); break; }
+				ui_caption(UI_CAP_THINK, "Let me hear that again\x85");
+				quiz_listening = true;
+				use_brain();
+				ai_hear(pcm, n, LISTEN_RATE, ear, ui_set.key[ear], ui_set.model[ear]);
+				bool stop = false;
+				while (ai_state() == AI_BUSY) { read_input(); if (down & PAD_BUTTON_B) { stop = true; break; } }
+				/* (stopped while it was being written down: let that finish first, so it isn't taken for a question) */
+				for (int k = 0; stop && k < 300 && ai_state() == AI_BUSY; k++) read_input();
+				quiz_listening = false;
+				ui_caption(UI_CAP_NONE, "");
+				if (stop) { wait_release(); return -1; }
+				if (ai_heard() && ai_heard()[0]) { snprintf(out, cap, "%s", ai_heard()); return 1; }
+				ui_toast("I didn't quite catch that. Try again?");
+				break;
+			}
+		}
+	}
+}
+
+/* a number of players or questions, from what was said ("three", "3", "just me") */
+static int quiz_number(const char *t) {
+	static const char *const words[] = { "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+	                                     "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty" };
+	for (const char *p = t; *p; p++) if (isdigit((unsigned char)*p)) return atoi(p);
+	for (int i = 20; i >= 1; i--) {   /* (longest first: "fourteen" before "four") */
+		char w[24];
+		snprintf(w, sizeof(w), " %s ", words[i]);
+		char padded[300];
+		snprintf(padded, sizeof(padded), " %s ", t);
+		for (char *c = padded; *c; c++) *c = isalpha((unsigned char)*c) ? (char)tolower((unsigned char)*c) : ' ';
+		if (strstr(padded, w)) return i;
+	}
+	if (says(t, "just me") || says(t, "only me") || says(t, "myself") || says(t, "solo") || says(t, "alone") || says(t, "single")) return 1;
+	if (says(t, "couple") || says(t, "pair") || says(t, "both of us") || says(t, "the two of us")) return 2;
+	return 0;
+}
+
+/* a name from what was said ("My name's Alex", "It's Sam Jones.", "alex") */
+static void quiz_name(const char *t, char *out, int cap, int player) {
+	char s[120];
+	snprintf(s, sizeof(s), "%s", t);
+	for (char *c = s; *c; c++) if (*c == ',' || *c == '.' || *c == '!') *c = ' ';
+	for (char *c = s; *c; ) { if (c[0] == ' ' && (c == s || c[1] == ' ')) memmove(c, c + 1, strlen(c)); else c++; }   /* (single spaces) */
+	static const char *const lead[] = { "my name is ", "my names ", "my name's ", "i am ", "im ", "i'm ", "it is ", "its ", "it's ", "call me ", "this is ", "hi ", "hello ", "hey ", "um ", "uh ", "er ", "oh ", "well " };
+	for (bool again = true; again;) {
+		again = false;
+		for (unsigned k = 0; k < sizeof(lead) / sizeof(lead[0]); k++)
+			if (!strncasecmp(s, lead[k], strlen(lead[k]))) { memmove(s, s + strlen(lead[k]), strlen(s + strlen(lead[k])) + 1); again = true; }
+	}
+	/* the first word, letters only (and a hyphen or apostrophe in it) */
+	int n = 0;
+	for (const char *p = s; *p && n < cap - 1 && n < 14; p++) {
+		unsigned char c = (unsigned char)*p;
+		if (isalpha(c) || c >= 0xC0 || ((c == '-' || c == '\'') && n)) out[n++] = (char)c;
+		else if (n) break;
+	}
+	out[n] = 0;
+	if (!n) snprintf(out, cap, "Player %d", player + 1);
+	else {
+		/* (all one case: made Capitalised; mixed, like McKenzie: kept as it is) */
+		bool lo = false, up = false;
+		for (int i = 0; i < n; i++) { if (islower((unsigned char)out[i])) lo = true; if (isupper((unsigned char)out[i])) up = true; }
+		if (!(lo && up)) for (int i = 1; i < n; i++) out[i] = (char)tolower((unsigned char)out[i]);
+		out[0] = (char)toupper((unsigned char)out[0]);
+	}
+}
+
+/* the topic from what was said ("let's do space", "anything") */
+static void quiz_topic(const char *t, char *out, int cap) {
+	char s[160];
+	snprintf(s, sizeof(s), "%s", t);
+	static const char *const lead[] = { "lets do ", "let's do ", "let's have ", "lets have ", "how about ", "what about ", "maybe ", "um ", "uh ", "er ",
+	                                    "i'd like ", "id like ", "i want ", "the topic is ", "topic is ", "the ", "a quiz on ", "a quiz about ", "quiz on ", "quiz about " };
+	for (bool again = true; again;) {
+		again = false;
+		for (unsigned k = 0; k < sizeof(lead) / sizeof(lead[0]); k++)
+			if (!strncasecmp(s, lead[k], strlen(lead[k]))) { memmove(s, s + strlen(lead[k]), strlen(s + strlen(lead[k])) + 1); again = true; }
+	}
+	size_t n = strlen(s);
+	while (n && strchr(" .!?,", s[n - 1])) s[--n] = 0;
+	if (!n || says(s, "anything") || says(s, "surprise") || says(s, "you choose") || says(s, "you pick") || says(s, "random") || says(s, "dont mind") || says(s, "whatever"))
+		snprintf(out, cap, "general knowledge");
+	else snprintf(out, cap, "%s", s);
+}
+
+/* where needle is in hay, ignoring case (NULL if it isn't) */
+static const char *find_nocase(const char *hay, const char *needle) {
+	size_t n = strlen(needle);
+	for (; *hay; hay++) if (!strncasecmp(hay, needle, n)) return hay;
+	return NULL;
+}
+
+/* the topic named with the request itself ("quiz me on dinosaurs", "trivia about space"), or "" */
+static void quiz_topic_in(const char *q, char *out, int cap) {
+	out[0] = 0;
+	const char *seps[] = { " on ", " about ", " of " };
+	for (unsigned k = 0; k < 3; k++) {
+		const char *p = find_nocase(q, seps[k]);
+		if (p) { quiz_topic(p + strlen(seps[k]), out, cap); return; }
+	}
+}
+
+/* More questions from the AI: true if some came. avoid: answers already used. */
+static bool quiz_fetch(const char *topic, int want, const char *avoid) {
+	static char sys[1400], req[1400];
+	snprintf(sys, sizeof(sys),
+	         "You write questions for a quiz game played out loud on a Nintendo GameCube: a speech synthesizer reads each "
+	         "question, and the players say their answers. So: short questions (under 25 words) in plain spoken English, "
+	         "each with one short, clear answer (a name, a number, a word or two) that is easy to say and to judge; no "
+	         "multiple choice, no trick questions, nothing with several right answers. Mix easy and medium questions. Every "
+	         "fact must be correct and well established. Reply with exactly %d lines and nothing else, each in the form: "
+	         "Q: the question || A: the answer", want);
+	snprintf(req, sizeof(req), "Topic: %s. Write %d questions.%s%s", topic, want, avoid[0] ? " Don't use any of these answers again: " : "", avoid);
+	ai_raw(sys, req);
+	if (!quiz_wait(qline("Hmm, let me think up some good questions\x85", "Ooh, let me find some good questions\x85"))) return false;
+	if (ai_state() != AI_DONE) return false;
+	quiz_nitems = quiz_next = 0;
+	const char *p = ai_answer();
+	while (*p && quiz_nitems < 16) {
+		const char *e = strchr(p, '\n');
+		size_t len = e ? (size_t)(e - p) : strlen(p);
+		char line[400];
+		snprintf(line, sizeof(line), "%.*s", (int)(len < sizeof(line) - 1 ? len : sizeof(line) - 1), p);
+		char *q = strstr(line, "Q:"), *a = strstr(line, "A:");
+		char *bar = strstr(line, "||");
+		if (q && a && a > q) {
+			if (bar && bar < a) *bar = 0; else a[-1] = 0;
+			char *qs = q + 2, *as = a + 2;
+			while (*qs == ' ' || *qs == '*') qs++;
+			while (*as == ' ' || *as == '*') as++;
+			QuizItem *it = &quiz_items[quiz_nitems];
+			snprintf(it->q, sizeof(it->q), "%s", qs);
+			snprintf(it->a, sizeof(it->a), "%s", as);
+			for (char *t = it->q + strlen(it->q); t > it->q && (t[-1] == ' ' || t[-1] == '|' || t[-1] == '*'); ) *--t = 0;
+			for (char *t = it->a + strlen(it->a); t > it->a && (t[-1] == ' ' || t[-1] == '.' || t[-1] == '*'); ) *--t = 0;
+			if (it->q[0] && it->a[0]) quiz_nitems++;
+		}
+		if (!e) break;
+		p = e + 1;
+	}
+	return quiz_nitems > 0;
+}
+
+/* plain lower-case letters and digits, single spaces (for comparing answers) */
+static void quiz_plain(const char *in, char *out, size_t cap) {
+	size_t n = 0;
+	bool sp = true;
+	for (const char *p = in; *p && n < cap - 1; p++) {
+		unsigned char c = (unsigned char)*p;
+		if (isalnum(c)) { out[n++] = (char)tolower(c); sp = false; }
+		else if (!sp && n) { out[n++] = ' '; sp = true; }
+	}
+	while (n && out[n - 1] == ' ') n--;
+	out[n] = 0;
+	if (!strncmp(out, "the ", 4)) memmove(out, out + 4, strlen(out + 4) + 1);
+}
+
+/* is it a pass? ("pass", "I don't know", "skip") */
+static bool quiz_pass(const char *t) {
+	return says(t, "pass") || says(t, "dont know") || says(t, "no idea") || says(t, "skip") || says(t, "not sure") || says(t, "give up");
+}
+
+/* Judges the answer (the AI, kindly; if it can't, a plain comparison): true
+ * if right, with what the host says in reaction */
+static bool quiz_judge(const QuizItem *it, const char *who, const char *said, char *react, int cap) {
+	if (quiz_pass(said)) {
+		snprintf(react, cap, qline("No bother, %s! The answer was %s.", "No worries, %s! The answer was %s."), who, it->a);
+		return false;
+	}
+	static char sys[2400], req[700];
+	snprintf(sys, sizeof(sys), "%s You are hosting a quiz game. Judge the player's answer fairly and kindly: accept small "
+	         "spelling or speech-recognition slips, other names for the same thing, and answers that are clearly right but "
+	         "worded differently; a surname alone is fine for a person, and a number written as words is fine. Start your "
+	         "reply with the single word RIGHT or WRONG, then one short sentence reacting in character, by the player's name. "
+	         "If they're wrong, say the correct answer. Don't ask a question back.", ai_persona());
+	snprintf(req, sizeof(req), "Question: %s\nCorrect answer: %s\n%s answered: \"%s\"", it->q, it->a, who, said);
+	ai_raw(sys, req);
+	if (quiz_wait(qline("Hmm, let me see\x85", "Ooh, let's see\x85")) && ai_state() == AI_DONE) {
+		const char *r = ai_answer();
+		while (*r == ' ' || *r == '*' || *r == '\n') r++;
+		bool right = !strncasecmp(r, "RIGHT", 5), wrong = !strncasecmp(r, "WRONG", 5);
+		if (right || wrong) {
+			r += 5;
+			while (*r && strchr(" .,:;!-\n", *r)) r++;
+			if (*r) snprintf(react, cap, "%s", r);
+			else snprintf(react, cap, right ? "That's right, %s!" : "Not quite, %s. It was %s.", who, it->a);
+			return right;
+		}
+	}
+	/* (the AI couldn't say: a plain comparison) */
+	char a[QUIZ_AMAX + 8], s[200];
+	quiz_plain(it->a, a, sizeof(a));
+	quiz_plain(said, s, sizeof(s));
+	bool right = a[0] && s[0] && (strstr(s, a) || (strlen(s) >= 3 && strstr(a, s)));
+	if (right) snprintf(react, cap, qline("Aye, that's right, %s!", "Yes! That's right, %s!"), who);
+	else snprintf(react, cap, qline("Och, not quite, %s. It was %s.", "Oh, not quite, %s. It was %s."), who, it->a);
+	return right;
+}
+
+static void quiz_scores(char *out, int cap, int np, char names[][16], const int *score) {
+	int n = 0;
+	for (int i = 0; i < np && n < cap; i++) n += snprintf(out + n, cap - n, "%s%s %d", i ? ",  " : "", names[i], score[i]);
+}
+
+/* The quiz: the host asks the topic, how many are playing, their names and
+ * how many questions each, then asks them in turn and keeps score. */
+static void quiz(const char *request) {
+	char topic[120], reply[300], line[600];
+	char names[QUIZ_PLAYERS][16];
+	int score[QUIZ_PLAYERS] = { 0 }, np = 0, rounds = 0;
+	quiz_stop = false;
+	speech_stop();
+	ui_chat("", "");
+	/* the topic (unless it came with the request) */
+	quiz_topic_in(request, topic, sizeof(topic));
+	if (topic[0]) {
+		snprintf(line, sizeof(line), qline("A quiz on %s? Och, splendid! How many players will we have? Up to four can play.",
+		                                   "Ooh, a quiz on %s! I love it. How many players are there? Up to four can play."), topic);
+		host(line, false);
+	} else {
+		host(qline("A quiz, is it? Och, I do love a good quiz! What topic shall it be?",
+		           "Ooh, a quiz! Fun! What topic shall we do?"), false);
+		for (;;) {
+			int r = quiz_reply("Say or type a topic, or \"anything\"", reply, sizeof(reply));
+			if (r < 0) { host(qline("Maybe another time, then!", "Okay, another time!"), false); return; }
+			if (r == 2) { host(qline("What topic shall it be? Anything you like!", "What topic shall we do? Anything you like!"), false); continue; }
+			quiz_topic(reply, topic, sizeof(topic));
+			break;
+		}
+		snprintf(line, sizeof(line), qline("%s it is! And how many players will we have? Up to four.", "%s, great choice! How many players? Up to four can play."), topic);
+		line[0] = (char)toupper((unsigned char)line[0]);
+		host(line, false);
+	}
+	/* how many are playing */
+	for (int tries = 0; !np; tries++) {
+		int r = quiz_reply("How many players? (1 to 4)", reply, sizeof(reply));
+		if (r < 0) { host(qline("Maybe another time, then!", "Okay, another time!"), false); return; }
+		int k = r == 1 ? quiz_number(reply) : 0;
+		if (k >= 1 && k <= QUIZ_PLAYERS) np = k;
+		else if (k > QUIZ_PLAYERS) host(qline("Och, that's a crowd! Up to four can play. How many will it be?", "Oh, that's a lot of us! Up to four can play. How many?"), false);
+		else host(qline("Sorry, how many players? One, two, three or four?", "Sorry, how many players? One, two, three or four?"), false);
+	}
+	/* their names */
+	for (int i = 0; i < np; i++) {
+		static const char *const nth[] = { "one", "two", "three", "four" };
+		if (np == 1) snprintf(line, sizeof(line), "%s", qline("Grand! And what's your name?", "Great! And what's your name?"));
+		else snprintf(line, sizeof(line), qline("Player %s, what's your name?", "Player %s, what's your name?"), nth[i]);
+		host(line, false);
+		for (;;) {
+			char prompt[60];
+			snprintf(prompt, sizeof(prompt), np == 1 ? "Your name" : "Player %d's name", i + 1);
+			int r = quiz_reply(prompt, reply, sizeof(reply));
+			if (r < 0) { host(qline("Maybe another time, then!", "Okay, another time!"), false); return; }
+			if (r == 2) { host(line, false); continue; }
+			quiz_name(reply, names[i], sizeof(names[i]), i);
+			break;
+		}
+		if (np > 1 && i < np - 1) {
+			snprintf(line, sizeof(line), qline("Welcome, %s!", "Hi, %s!"), names[i]);
+			host(line, true);
+		}
+	}
+	/* how many questions each */
+	snprintf(line, sizeof(line), np == 1 ? qline("Lovely to meet you, %s! How many questions: five, ten or fifteen?", "Nice to meet you, %s! How many questions: five, ten or fifteen?")
+	                                     : qline("Welcome, %s! Now, how many questions each: five, ten or fifteen?", "Hi, %s! Now, how many questions each: five, ten or fifteen?"),
+	         names[np - 1]);
+	host(line, false);
+	while (!rounds) {
+		int r = quiz_reply(np == 1 ? "How many questions? (5, 10 or 15)" : "How many questions each? (5, 10 or 15)", reply, sizeof(reply));
+		if (r < 0) { host(qline("Maybe another time, then!", "Okay, another time!"), false); return; }
+		int k = r == 1 ? quiz_number(reply) : 0;
+		if (k > 0) rounds = k <= 7 ? 5 : k <= 12 ? 10 : 15;
+		else host(qline("Five, ten or fifteen questions?", "Five, ten or fifteen questions?"), false);
+	}
+	/* the questions, a few at a time */
+	int total = np * rounds;
+	static char avoid[1200];
+	avoid[0] = 0;
+	quiz_nitems = quiz_next = 0;
+	for (int turn = 0; turn < total; turn++) {
+		int who = turn % np;
+		if (quiz_next >= quiz_nitems) {
+			int want = total - turn < 10 ? total - turn + 2 : 10;   /* (a couple spare, in case of a bad one) */
+			if (!quiz_fetch(topic, want, avoid)) {
+				if (quiz_stop) { host(qline("Maybe another time, then!", "Okay, another time!"), false); return; }
+				host(qline("Och, my brain's gone a wee bit foggy and I can't think of any questions just now. Let's try again later!",
+				           "Oh no, I can't seem to find any questions just now. Let's try again later!"), false);
+				return;
+			}
+		}
+		QuizItem *it = &quiz_items[quiz_next++];
+		size_t al = strlen(avoid);
+		if (al + strlen(it->a) + 4 < sizeof(avoid)) snprintf(avoid + al, sizeof(avoid) - al, "%s%s", al ? "; " : "", it->a);
+		if (turn == 0) {
+			if (np == 1) snprintf(line, sizeof(line), qline("Right then! %d questions on %s. Here we go!", "Okay! %d questions on %s. Here we go!"), rounds, topic);
+			else snprintf(line, sizeof(line), qline("Right then! %d questions each on %s. %s, you're up first!",
+			                                        "Okay! %d questions each on %s. %s, you're first!"), rounds, topic, names[0]);
+			host(line, true);
+		}
+		int qnum = turn / np + 1;
+		if (np == 1) snprintf(line, sizeof(line), "Question %d. %s", qnum, it->q);
+		else snprintf(line, sizeof(line), "%s, question %d. %s", names[who], qnum, it->q);
+		host(line, false);
+		char prompt[60];
+		snprintf(prompt, sizeof(prompt), np == 1 ? "Your answer" : "%s's answer", names[who]);
+		int r;
+		while ((r = quiz_reply(prompt, reply, sizeof(reply))) == 2) host(line, false);
+		if (r < 0) {
+			quiz_scores(line, sizeof(line), np, names, score);
+			char bye[700];
+			if (np == 1) snprintf(bye, sizeof(bye), qline("Stopping there? Righto. You got %d out of %d. Well played!", "Stopping there? Okay! You got %d out of %d. Nicely done!"), score[0], turn);
+			else snprintf(bye, sizeof(bye), qline("Stopping there? Righto. The scores were: %s. Well played, all!", "Stopping there? Okay! The scores were: %s. Nicely played, everyone!"), line);
+			host(bye, false);
+			return;
+		}
+		char react[400];
+		bool right = quiz_judge(it, names[who], reply, react, sizeof(react));
+		if (quiz_stop) r = -1;   /* (B while it was being judged: stopping, as above) */
+		if (r < 0) {
+			quiz_scores(line, sizeof(line), np, names, score);
+			char bye[700];
+			if (np == 1) snprintf(bye, sizeof(bye), qline("Stopping there? Righto. You got %d out of %d. Well played!", "Stopping there? Okay! You got %d out of %d. Nicely done!"), score[0], turn);
+			else snprintf(bye, sizeof(bye), qline("Stopping there? Righto. The scores were: %s. Well played, all!", "Stopping there? Okay! The scores were: %s. Nicely played, everyone!"), line);
+			host(bye, false);
+			return;
+		}
+		if (right) score[who]++;
+		ui_layout(1);
+		ui_chat(reply, react);
+		speech_say(react);
+		if (right) { ui_chuckle(); sound_play(SFX_CONFIRM); }
+		quiz_scores(line, sizeof(line), np, names, score);
+		if (np > 1) ui_toast(line);
+		while (speech_busy()) read_input();
+		wait_frames(20);
+	}
+	/* the end */
+	if (np == 1) {
+		int s = score[0];
+		const char *verdict = s * 10 >= total * 8 ? qline("Magnificent! A true scholar!", "Wow! Top of the class!")
+		                    : s * 10 >= total * 5 ? qline("Well done indeed!", "Really nicely done!")
+		                    : s > 0 ? qline("Not bad at all, and you'll do even better next time!", "Good effort, and next time you'll do even better!")
+		                            : qline("Och, a tricky lot, those! Have another go sometime.", "Oh, those were tricky ones! Have another go sometime.");
+		snprintf(line, sizeof(line), qline("And that's the end of the quiz! %s, you got %d out of %d. %s", "And that's the quiz! %s, you got %d out of %d. %s"),
+		         names[0], s, total, verdict);
+	} else {
+		int best = 0;
+		for (int i = 1; i < np; i++) if (score[i] > score[best]) best = i;
+		int ties = 0;
+		for (int i = 0; i < np; i++) if (score[i] == score[best]) ties++;
+		char sc[300];
+		quiz_scores(sc, sizeof(sc), np, names, score);
+		if (ties > 1) snprintf(line, sizeof(line), qline("And that's the end of the quiz! The scores: %s. A tie at the top! Well played, all.",
+		                                                 "And that's the quiz! The scores: %s. It's a tie! Nicely played, everyone."), sc);
+		else snprintf(line, sizeof(line), qline("And that's the end of the quiz! The scores: %s. Our winner is %s! Well played, all.",
+		                                        "And that's the quiz! The scores: %s. And the winner is %s! Nicely played, everyone."), sc, names[best]);
+	}
+	host(line, false);
+	ui_chuckle();
+	sound_play(SFX_CONFIRM);
 }
 
 static void conversation(void) {
@@ -1231,7 +1709,7 @@ int main(int argc, char **argv) {
 	if (storage_ok()) update_remove_old();   /* (the version an update replaced, now this one has started) */
 	use_character();   /* (the hologram's voice, loaded in the background) */
 	use_brain();
-	ai_hear_filter(is_egg);   /* (his little secrets aren't sent on to the AI) */
+	ai_hear_filter(hear_filter);   /* (his little secrets, and the quiz, aren't sent on to the AI) */
 	ai_warm_up();   /* the network and the clock, while he switches on */
 	ui_layout(0);
 	ui_pose(0, 0, true);

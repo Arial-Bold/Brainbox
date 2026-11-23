@@ -197,7 +197,7 @@ static const char *build(Buf *b_, char *url, size_t ucap, char *headers, size_t 
     case AI_CLAUDE:
         snprintf(url, ucap, "https://api.anthropic.com/v1/messages");
         snprintf(headers, hcap, "x-api-key: %s\r\nanthropic-version: 2023-06-01\r\n", key);
-        buf_addf(&b, "{\"model\":\"%s\",\"max_tokens\":600,\"system\":", use_model);
+        buf_addf(&b, "{\"model\":\"%s\",\"max_tokens\":1000,\"system\":", use_model);
         buf_add_json_string(&b, sys);
         buf_add(&b, ",\"messages\":[");
         messages(&b, question, false);
@@ -359,7 +359,13 @@ static bool wants_weather(const char *a, char *place, size_t cap) {
 }
 
 static void ask_brain(bool can_search, const char *facts);
+/* (1.5) a request of BrainBox's own (the quiz): its own instructions, no
+ * conversation, rules or memory, and not remembered afterwards */
+static bool raw;
+static char raw_sys[3600];
+
 static void run_question(void) {
+    if (raw) { ask_brain(false, NULL); return; }
     make_context();
     ask_brain(search_on && !testing, NULL);
 }
@@ -370,7 +376,8 @@ static void ask_brain(bool can_search, const char *facts) {
     else if (testing) snprintf(rules, sizeof(rules), "%s", NO_SEARCH);
     else snprintf(rules, sizeof(rules), "%s%s%s%s%s", WEATHER_RULE, NEWS_RULE, WIKI_RULE, memory_on() ? MEMORY_RULE : "",
                   can_search ? SEARCH_RULE : search_key[0] ? NO_SEARCH : NO_SEARCH_KEY);
-    make_sys(rules);
+    if (raw) snprintf(sys, sizeof(sys), "%s", raw_sys);
+    else make_sys(rules);
     char err[200] = "";
     const char *models_[5];
     int nm = candidates(models_);
@@ -666,13 +673,30 @@ void ai_ask(const char *q) {
     if (state == AI_BUSY) return;
     snprintf(question, sizeof(question), "%s", q);
     testing = false;
+    raw = false;
     start();
+}
+
+void ai_raw(const char *instructions, const char *q) {
+    if (state == AI_BUSY) return;
+    snprintf(question, sizeof(question), "%s", q);
+    snprintf(raw_sys, sizeof(raw_sys), "%s", instructions);
+    testing = true;   /* (no conversation, rules, memory or remembering: as for a key being tried) */
+    raw = true;
+    start();
+}
+
+const char *ai_persona(void) {
+    static char p[1600];
+    snprintf(p, sizeof(p), "%s%s", character == 1 ? HER : SCOTTY, SPOKEN);
+    return p;
 }
 
 bool ai_test(void) {
     if (state == AI_BUSY) return false;
     snprintf(question, sizeof(question), "Please introduce yourself in one short, cheerful sentence.");
     testing = true;
+    raw = false;
     return start();
 }
 

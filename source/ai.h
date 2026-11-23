@@ -19,6 +19,10 @@ const char *ai_default_model(AiBrain b);
 
 void ai_ask(const char *question);       /* starts asking (CP-1252 text) */
 bool ai_test(void);                      /* starts a quick check that the key works */
+/* (1.5) starts a request with these instructions instead of the usual ones:
+ * no conversation, rules or memory go with it, and it isn't remembered (the quiz) */
+void ai_raw(const char *instructions, const char *q);
+const char *ai_persona(void);            /* how the hologram in use talks (for ai_raw instructions) */
 AiState ai_state(void);
 const char *ai_answer(void);             /* when AI_DONE: the reply (CP-1252), or the problem when AI_FAILED */
 void ai_warm_up(void);                  /* the network and the clock, ready in the background (at start-up) */
