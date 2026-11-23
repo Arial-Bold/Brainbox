@@ -1367,15 +1367,21 @@ static unsigned build_gen;   /* (counts builds: the moving parts' display lists 
 static int made_for = -1;    /* which hologram the parts that never change were made for */
 void head3d_character(int c) { who = c == 1 ? 1 : 0; }
 int head3d_get_character(void) { return who; }
-void head3d_build(const HeadPose *ps) {
-    build_gen++;
+static void build_all(const HeadPose *ps, bool shape);
+void head3d_build(const HeadPose *ps) { build_all(ps, true); }
+/* (1.5) Only how he's turned and bobbing, with his shape and lighting kept
+ * from the last build: for the opening, which draws him several times a
+ * frame and had no time to spare for reshaping him too (it ran at 30). */
+void head3d_pose(const HeadPose *ps) { build_all(ps, made_for != who || !nverts); }
+static void build_all(const HeadPose *ps, bool shape) {
+    if (shape) build_gen++;
     if (made_for != who) {   /* the parts that never change: made, lit and recorded once (again if the hologram changes) */
         zmap_made = false;
         build(ps, true);
         make_static();
         made_for = who;
     }
-    build(ps, false);
+    if (shape) build(ps, false);
     float t = ps->t, th = ps->think;
     head_rot = rotz(0.07f * th + 0.02f * sinf(t) + 0.03f * ps->chuckle * sinf(t * 18));
     if (who == 1) {   /* hers: she looks down a little as she thinks (and the light catches her spectacles) */
@@ -1447,6 +1453,7 @@ void head3d_build(const HeadPose *ps) {
     }
     pencil_bob = 0.05f * sinf(t * 3);
     show_props = ps->props;
+    if (!shape) return;
     for (int i = ns; i < nverts; i++) store(i);
     if (nverts > ns) {
         DCFlushRange(apos + ns * 3, sizeof(f32) * 3 * (nverts - ns));

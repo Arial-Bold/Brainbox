@@ -4,6 +4,7 @@
  * Made from scratch at start-up (nothing recorded). */
 #include "holosynth.h"
 #include <math.h>
+#include "bbmath.h"   /* (1.5: sinf of large angles, quickly: making this sound took seconds at start-up) */
 #include <stdlib.h>
 #include <string.h>
 

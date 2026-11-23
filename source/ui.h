@@ -58,7 +58,8 @@ const char *ui_resolution_name(int r);
 
 void ui_init(void);           /* video, graphics and the drawing thread (call first) */
 extern u64 ui_first_frame_at, ui_head_frame_at;   /* when the first frame reached the TV, and the first with him made (gettime; for boot.txt) */
-void ui_intro_frames(char *out, int cap);         /* (1.4) the opening's frame times, as text (for boot.txt) */
+void ui_intro_frames(char *out, int cap);
+void ui_character_known(void);   /* (1.5) the settings are read (he's made only then, so the right one is made first) */         /* (1.4) the opening's frame times, as text (for boot.txt) */
 void ui_shutdown(void);       /* before rebooting or starting another program */
 
 /* ------------------------------------------------------------------ scene */

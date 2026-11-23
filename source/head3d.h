@@ -21,6 +21,8 @@ typedef struct { float x0, y0, x1, y1; } HeadBox;   /* where he was drawn */
 
 /* Makes him in this pose (shape and lighting); once a frame. */
 void head3d_build(const HeadPose *pose);
+/* (1.5) Only his pose (turn, bob, the globe's turn), his shape kept from the last build: quicker */
+void head3d_pose(const HeadPose *pose);
 /* The visible part of the 640x480 layout (as the 2D drawing's projection
  * has it), and whether the depth test is turned round (display.depth_flip). */
 void head3d_view(float l, float t, float r, float b, bool depth_flip);

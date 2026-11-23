@@ -995,6 +995,8 @@ static void pose_update(float t) {
 
 static void frame_setup(void);
 u64 ui_first_frame_at, ui_head_frame_at;   /* (for boot.txt) */
+static volatile bool char_known;   /* (1.5) the settings are read: which hologram it is, is known */
+void ui_character_known(void) { char_known = true; }
 /* (1.4) each frame of the opening, for boot.txt: how long it took in all, and its parts (tenths of a ms) */
 #define IF_MAX 160
 static u16 if_total[IF_MAX], if_head[IF_MAX], if_cpu[IF_MAX], if_gpu[IF_MAX];
@@ -1207,10 +1209,13 @@ static void stage(void) {
 	 * while he isn't showing yet anyway, the room is drawn without him: it's
 	 * on the TV straight away, and then he's made behind it. */
 	static int room_frames;
-	if (head_made || sc.intro != 1 || ++room_frames > 3) {
+	/* (1.5: and not before the settings have been read: making the wrong
+	 * hologram first, then the right one as the opening began, was a jolt) */
+	if (char_known && (head_made || sc.intro != 1 || ++room_frames > 3)) {
 		head3d_character(ui_set.character);   /* (which hologram: made afresh when it changes) */
 		u64 pt_b = pt_now();
-		head3d_build(&pose);
+		if (head_made && sc.intro == 2) head3d_pose(&pose);   /* (the opening: his pose only, to keep it at 60) */
+		else head3d_build(&pose);
 		pt_add(PT_BUILD, pt_b);
 		if_build_us = ticks_to_microsecs(gettime() - pt_b);
 		head_made = true;

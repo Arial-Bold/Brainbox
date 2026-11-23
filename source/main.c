@@ -1722,6 +1722,7 @@ int main(int argc, char **argv) {
 		ui_settings_path(path);
 		ui_settings_load();
 	}
+	ui_character_known();   /* (now he can be made: the right hologram, first time) */
 	memory_enable(ui_set.memory);
 	memory_load();   /* (what he remembers about you) */
 	boot_mark("SD card and settings read");
