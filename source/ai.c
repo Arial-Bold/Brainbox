@@ -647,6 +647,8 @@ static bool start(void) { return start_with(ask_main); }
 
 /* the network and the clock, made ready in the background while the
  * opening plays (so the first question doesn't wait for them) */
+static volatile bool warm_go;
+void ai_warm_continue(void) { warm_go = true; }
 static void *warm_main(void *arg) {
     (void)arg;
     net_start();
@@ -656,7 +658,7 @@ static void *warm_main(void *arg) {
         /* where they are, ready for the first question and for Settings: once
          * the opening is over (a secure connection is hard work for the
          * processor, and it made the opening stutter) */
-        while (!ui_intro_done()) thr_sleep_ms(100);
+        for (int k = 0; k < 600 && !warm_go; k++) thr_sleep_ms(100);   /* (1.5: until the first words are said; a minute at most) */
         char town[120];
         weather_home(town, sizeof(town));
     }

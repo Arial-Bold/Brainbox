@@ -39,5 +39,6 @@ int  head3d_get_character(void);
 void head3d_globe_point(float lat, float lon, float seconds);
 /* (1.5) the pencil shown, or hidden (the quiz's abacus floats in its place) */
 void head3d_pencil(bool shown);
+void head3d_globe(bool shown);   /* (1.5) the globe shown, or hidden (the quiz's abacus floats in its place) */
 /* his colours are multiplied by this when drawn (white: as they are; a pale blue for a ghostly hologram) */
 void head3d_tint(u8 r, u8 g, u8 b);

@@ -212,6 +212,9 @@ void sound_play_shimmer(void) {
 
 /* ------------------------------------------------------- the background */
 
+static volatile bool amb_allowed;   /* (1.5) not until the first words at start-up are said */
+void sound_ambience_allow(void) { amb_allowed = true; }
+
 void sound_ambience_tick(bool listening, bool talking) {
 	static bool playing;
 	static float level;      /* 0..1: faded in, dipped, quiet */
@@ -221,7 +224,7 @@ void sound_ambience_tick(bool listening, bool talking) {
 	if (!playing) {
 		/* (as the opening finishes: starting it during the opening, alongside
 		 * its sound, made the opening stutter) */
-		if (!ui_intro_done()) return;
+		if (!ui_intro_done() || !amb_allowed) return;
 		AESND_SetVoiceVolume(amb_voice, 0, 0);
 		AESND_PlayVoice(amb_voice, VOICE_MONO16, amb_buf, amb_bytes, AMB_RATE, 0, true);   /* (round and round) */
 		playing = true;

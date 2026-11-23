@@ -4,6 +4,7 @@
 #include "net/https.h"
 #include "net/netio.h"
 #include "net/thr.h"
+#include "net/storage.h"
 #include <ctype.h>
 #include <math.h>
 #include <stdio.h>
@@ -298,6 +299,58 @@ static bool find_home(void) {
     thr_unlock(&find_mu);
     return ok;
 }
+/* (1.5) The home town, once found, is kept in hometown.txt beside the app,
+ * so it isn't looked up again every time BrainBox starts. It's looked up
+ * afresh only when Home town changes (or, on Auto, once a month, in case
+ * you've moved); its time zone is checked once a day (for summer time). */
+static time_t now_utc(void) { return netio_time_synced() ? netio_now() : time(NULL); }
+
+static void cache_save(const char *town, const Place *pl, time_t found_at) {
+    if (!storage_ok()) return;
+    char out[600], path[300];
+    int n = snprintf(out, sizeof(out), "# BrainBox's home town, as last found (delete this file to look it up again)\n"
+                     "key=%s\nname=%s\ncc=%s\nlat=%.5f\nlon=%.5f\noffset=%d\noffset_at=%lld\nfound_at=%lld\n",
+                     town, pl->name, pl->cc, pl->lat, pl->lon, pl->has_offset ? pl->offset : 0,
+                     (long long)(pl->has_offset ? now_utc() : 0), (long long)found_at);
+    storage_path(path, sizeof(path), "hometown.txt");
+    storage_write_atomic(path, out, (size_t)n);
+}
+
+/* the kept home town, if it's for this Home town setting */
+static bool cache_load(const char *town, Place *pl, time_t *offset_at, time_t *found_at) {
+    if (!storage_ok()) return false;
+    char path[300];
+    storage_path(path, sizeof(path), "hometown.txt");
+    size_t len = 0;
+    char *data = storage_is_file(path) ? storage_read(path, &len) : NULL;
+    if (!data) return false;
+    bool key_ok = false, have_lat = false, have_lon = false;
+    memset(pl, 0, sizeof(*pl));
+    *offset_at = *found_at = 0;
+    char *sp = NULL;
+    for (char *line = strtok_r(data, "\n", &sp); line; line = strtok_r(NULL, "\n", &sp)) {
+        char *cr = strchr(line, '\r');
+        if (cr) *cr = 0;
+        char *eq = strchr(line, '=');
+        if (!eq || line[0] == '#') continue;
+        *eq = 0;
+        const char *v = eq + 1;
+        if (!strcmp(line, "key")) key_ok = !strcasecmp(v, town);
+        else if (!strcmp(line, "name")) snprintf(pl->name, sizeof(pl->name), "%s", v);
+        else if (!strcmp(line, "cc")) snprintf(pl->cc, sizeof(pl->cc), "%s", v);
+        else if (!strcmp(line, "lat")) { pl->lat = atof(v); have_lat = true; }
+        else if (!strcmp(line, "lon")) { pl->lon = atof(v); have_lon = true; }
+        else if (!strcmp(line, "offset")) pl->offset = atoi(v);
+        else if (!strcmp(line, "offset_at")) *offset_at = (time_t)atoll(v);
+        else if (!strcmp(line, "found_at")) *found_at = (time_t)atoll(v);
+    }
+    free(data);
+    if (!key_ok || !have_lat || !have_lon || !pl->name[0]) return false;
+    pl->has_offset = *offset_at != 0;
+    pl->ok = true;
+    return true;
+}
+
 static bool find_home_locked(void) {
     lock();
     char town[64];
@@ -308,8 +361,24 @@ static bool find_home_locked(void) {
     if (home_for == gen && home_tried && time(NULL) - home_tried < 300) return false;   /* (tried lately) */
     Place pl;
     memset(&pl, 0, sizeof(pl));
+    /* kept from last time? (Auto: good for a month; a typed town: until it's changed) */
+    time_t offset_at, found_at, now = now_utc();
+    if (cache_load(town, &pl, &offset_at, &found_at) && (town[0] || (found_at && now - found_at < 30 * 86400))) {
+        if (!pl.has_offset || now - offset_at > 86400) {   /* (its time zone, once a day: for summer time) */
+            if (forecast(&pl, NULL, 0)) cache_save(town, &pl, found_at);
+        }
+        home = pl;
+        home_for = gen;
+        home_tried = 0;
+        lock();
+        if (gen == home_gen) snprintf(known, sizeof(known), "%s", home.name);
+        unlock();
+        return true;
+    }
+    memset(&pl, 0, sizeof(pl));
     bool ok = town[0] ? geocode(town, &pl) : from_network(&pl);
     if (ok) forecast(&pl, NULL, 0);   /* (its time zone, for the clock) */
+    if (ok) cache_save(town, &pl, now_utc());
     home = pl;
     home.ok = ok;
     home_for = gen;

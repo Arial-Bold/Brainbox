@@ -25,7 +25,8 @@ void ai_raw(const char *instructions, const char *q);
 const char *ai_persona(void);            /* how the hologram in use talks (for ai_raw instructions) */
 AiState ai_state(void);
 const char *ai_answer(void);             /* when AI_DONE: the reply (CP-1252), or the problem when AI_FAILED */
-void ai_warm_up(void);                  /* the network and the clock, ready in the background (at start-up) */
+void ai_warm_up(void);
+void ai_warm_continue(void);             /* (1.5) the rest of the warming up (finding the home town): once the first words are said */                  /* the network and the clock, ready in the background (at start-up) */
 void ai_forget(void);                    /* a new conversation */
 const char *ai_model(void);              /* the model in use (it can change if the usual one has gone) */
 /* Looking things up: with a Gemini key (whichever AI is his brain), when a

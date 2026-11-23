@@ -942,6 +942,11 @@ static void bloom(void) {
 /* ---------------------------------------------------- the professor's pose */
 
 static HeadPose pose;
+/* (1.5) the quiz's abacus: its width, its space from him, and how much it shows (0..1; he steps aside to make room) */
+#define QB_W 128
+#define QB_GAP 26
+static float qb_k;
+static float qb_safe_left(void) { return (ui_set.widescreen ? 320 - 640.0f * 4 / 3 / 2 : 0) + 10; }   /* (inside the picture, in 4:3 or 16:9) */
 static float mouth, px_now = 320, think_now, think_secs, brows_now, fog_now;
 static u32 blink_at, last_ms;
 
@@ -969,6 +974,11 @@ static void pose_update(float t) {
 	/* the panels on the right (choosing an AI, signing in): he steps over to the left, clear of them */
 	bool panel_right = sc.overlay == UI_OVERLAY_BRAIN || sc.overlay == UI_OVERLAY_SIGNIN;
 	float target_x = panel_right ? 120 : sc.side ? 196 : 320;
+	/* (1.5) during a quiz he steps right a little, so the abacus fits on his left with room to spare */
+	if (sc.side && !panel_right && qb_k > 0.01f) {
+		float need = qb_safe_left() + QB_W + QB_GAP + 72;   /* (72: about half his width) */
+		if (need > target_x) target_x += (need - target_x) * qb_k;
+	}
 	px_now += (target_x - px_now) * clamp01(dt * 4);
 	float ch = sc.chuckle_at ? 1 - (now - sc.chuckle_at) / 900.0f : 0;
 	pose.t = t;
@@ -997,12 +1007,14 @@ void ui_intro_frames(char *out, int cap) {
 		              if_cpu[i] / 10, if_cpu[i] % 10, if_gpu[i] / 10, if_gpu[i] % 10, if_total[i] > 180 ? "  <- late" : "");
 }
 static bool head_made;   /* (1.4: he's made after the first few frames, so the room shows straight away) */
-/* (1.5) The quiz's scoreboard: a small brass abacus floating by his right
- * shoulder (where the pencil usually is), one rod per player, a gold bead
- * slid across for each point. It's sized to fit however many players and
- * questions there are, so nothing runs off the bottom. */
-static void quiz_board(float cx, float t) {
-	static float k, bead_x[4][15], pulse[4];
+/* (1.5) The quiz's scoreboard: a small brass abacus floating off to his
+ * left (where the globe usually is), one rod per player, a gold bead slid
+ * across for each point. It's sized to fit however many players and
+ * questions there are, so nothing runs off the bottom; head_left is where
+ * he begins, so it keeps a little space from him. */
+static void quiz_board(float head_left, float t) {
+	static float bead_x[4][15], pulse[4];
+	float k = qb_k;
 	static int seen_seq[4];
 	static u32 last;
 	u32 now = now_ms();
@@ -1011,20 +1023,22 @@ static void quiz_board(float cx, float t) {
 	last = now;
 	bool want = sc.qb_on && sc.screen == UI_STAGE && !sc.overlay && sc.intro == 0;
 	k += ((want ? 1.0f : 0.0f) - k) * clamp01(dt * 5);
-	head3d_pencil(k < 0.5f);
+	qb_k = k;
+	head3d_globe(k < 0.5f);
 	if (k < 0.02f) { for (int p = 0; p < 4; p++) seen_seq[p] = sc.qb_point_seq[p]; return; }
 	int np = sc.qb_np, max = sc.qb_max;
 	/* the size: rows of a name line and a rod, inside a brass frame */
-	const float FRAME = 5, PAD = 6, NAME_H = 12, ROD_H = 10, ROW_GAP = 6, W = 128;
+	const float FRAME = 5, PAD = 6, NAME_H = 12, ROD_H = 10, ROW_GAP = 6, W = QB_W;
 	float row_h = NAME_H + 2 + ROD_H;
 	float H = 2 * (FRAME + PAD) + np * row_h + (np - 1) * ROW_GAP;
-	float x = cx + 62, y = 214 + 2.0f * sinf(t * 1.4f);
+	float x = head_left - QB_GAP - W, y = 196 + 2.0f * sinf(t * 1.4f);
+	if (x < qb_safe_left()) x = qb_safe_left();   /* (never off the edge of the screen) */
 	if (y + H > 372) y = 372 - H;   /* (always clear of the caption bar) */
 	/* tilted a little, like a prop he's holding up */
 	Mtx m, r, a, b;
 	float px = x + W / 2, py = y + H / 2;
 	guMtxTrans(a, -px, -py, 0);
-	guMtxRotDeg(r, 'z', 4);
+	guMtxRotDeg(r, 'z', -4);   /* (leaning in towards him) */
 	guMtxConcat(r, a, b);
 	guMtxTrans(a, px, py, 0);
 	guMtxConcat(a, b, m);
@@ -1288,7 +1302,7 @@ static void stage(void) {
 		}
 		GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
 	}
-	quiz_board(cx, t);   /* (1.5: the quiz's scoreboard, when there's a quiz) */
+	quiz_board(last_box.x1 > last_box.x0 ? last_box.x0 : cx - 72, t);   /* (1.5: the quiz's scoreboard, when there's a quiz) */
 	STEP(14);
 	{ u64 pt_g = pt_now(); bloom(); pt_add(PT_BLOOM, pt_g); }
 	STEP(15);

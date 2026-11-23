@@ -38,6 +38,7 @@ static bool dir_sounds = true;   /* the move sounds (not while scrolling his ans
 static int repeat;
 
 /* once a frame: the controller (the stick works as the + Control Pad) and the keyboard */
+static bool boot_greeted;   /* (1.5) the first words at start-up have been started */
 static void read_input(void) {
 	VIDEO_WaitVSync();
 	PAD_ScanPads();
@@ -62,6 +63,17 @@ static void read_input(void) {
 		char m[96];
 		snprintf(m, sizeof(m), "BrainBox %s is ready to install: Settings > Updates", update_latest_version());
 		ui_toast(m);
+	}
+	/* (1.5) Once the first words at start-up have been said, the work that
+	 * was held back so they'd come out clean: the hologram's background sound,
+	 * the quiet check for updates, and finding the home town. Starting those
+	 * while she was saying hello broke her voice up with static. */
+	static bool settled;
+	if (!settled && boot_greeted && !speech_busy()) {
+		settled = true;
+		sound_ambience_allow();
+		update_request_check(true);   /* (quietly: it says so only if there's a new version) */
+		ai_warm_continue();
 	}
 	sound_ambience_tick(listening_now, speech_busy());
 	if (down & PAD_BUTTON_B) sound_play(SFX_BACK);
@@ -1733,7 +1745,6 @@ int main(int argc, char **argv) {
 		sound_play_holo();
 		while (!ui_intro_done()) read_input();
 	} else ui_intro_skip();
-	update_request_check(true);   /* (quietly: it says so only if there's a new version) */
 	/* his voice starts in the background too (a second or so: usually ready by now) */
 	if (!speech_ready()) ui_caption(UI_CAP_INFO, "Warming up\x85");
 	boot_mark("opening finished");
@@ -1748,6 +1759,7 @@ int main(int argc, char **argv) {
 		ui_pose(0.6f, 0, true);
 		say("", "Oh my... my head's a little foggy today. I seem to have misplaced my brain! Would you lend me one? "
 		        "Just choose your favorite AI and sign me in.");
+		boot_greeted = true;
 		hints(2, "A:Choose an AI", "B:Exit to Launcher");
 		for (;;) {
 			read_input();
@@ -1768,6 +1780,7 @@ int main(int argc, char **argv) {
 		char hello[200];
 		greeting(hello, sizeof(hello));
 		say("", hello);
+		boot_greeted = true;
 	}
 	boot_mark("first words said");
 	boot_save();

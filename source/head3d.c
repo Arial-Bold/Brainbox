@@ -46,8 +46,9 @@ static V3 apply(const M3 *m, V3 v) {
 
 #define GLOBE_C v3(-1.08f, 0.18f, -0.30f)
 static int globe_v0, globe_v1;   /* the globe's vertices (lit again each frame as it turns) */
-static bool pencil_hidden;       /* (1.5) */
+static bool pencil_hidden, globe_hidden;   /* (1.5) */
 void head3d_pencil(bool shown) { pencil_hidden = !shown; }
+void head3d_globe(bool shown) { globe_hidden = !shown; }
 /* (1.4) the globe turning to show a place (the weather's), with a glowing mark on it */
 static volatile int point_req;           /* bumped by head3d_globe_point */
 static volatile float point_lat, point_lon, point_hold;
@@ -1578,7 +1579,8 @@ void head3d_draw(float x, float y, float scale, float alpha, float mirror_y, Hea
     }
     for (int g = 0; g < NGRP; g++) {
         if (g != G_HEAD && !show_props) continue;
-        if (g == G_PENCIL && pencil_hidden) continue;   /* (1.5: the quiz's abacus is in its place) */
+        if (g == G_PENCIL && pencil_hidden) continue;
+        if (g == G_GLOBE && globe_hidden) continue;   /* (1.5: the quiz's abacus is in its place) */
         Mtx m;
         group_mtx(g, mirror_y, m);
         GX_LoadPosMtxImm(m, GX_PNMTX0);

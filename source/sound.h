@@ -18,4 +18,5 @@ void sound_play_shimmer(void);   /* (a little secret) */
  * (fading in) once the opening is over, follows the Menu sounds volume, dips
  * while he talks, and goes silent while the microphone is listening (so it
  * isn't heard by it). Now and then a soft bell note plays over it. */
+void sound_ambience_allow(void);   /* (1.5) the background may start (once the first words at start-up are said) */
 void sound_ambience_tick(bool listening, bool talking);
