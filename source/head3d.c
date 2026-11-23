@@ -1303,6 +1303,7 @@ static void build(const HeadPose *ps, bool S) {
         cur_grp = G_FIXED;
         V3 pc = v3(1.06f, 0.10f + 0.05f * sinf(t * 3), -0.35f), d = v3(sinf(-0.6f), -cosf(-0.6f), 0);
         V3 tip = add(pc, mul(d, 0.31f)), sc[30];
+        if (who == 1) tip = add(tip, v3(0.12f, -0.24f, 0));   /* (hers moved down and out with her pencil: see group_mtx) */
         for (int i = 0; i < 30; i++) {
             float x = i / 29.0f;
             sc[i] = v3(tip.x - 0.32f + 0.32f * x, tip.y - 0.02f + 0.04f * sinf(x * 18 + t * 4 * ps->scribble), tip.z);
@@ -1601,7 +1602,7 @@ static void group_mtx(int g, float mirror_y, Mtx m) {
         A = globe_rot;
         o = add(sub(c, apply(&A, c)), v3(0, globe_bob, 0));
     }
-    else if (g == G_PENCIL) o = v3(0, pencil_bob, 0);
+    else if (g == G_PENCIL) o = v3(who == 1 ? 0.12f : 0, pencil_bob - (who == 1 ? 0.24f : 0), 0);   /* (1.5: hers a little lower and out, clear of her earring) */
     /* the reflection: y -> 2 mirror_y - y */
     if (mirror_y > -100) {
         for (int j = 0; j < 3; j++) A.m[1][j] = -A.m[1][j];
