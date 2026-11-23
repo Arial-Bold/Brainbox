@@ -1081,7 +1081,7 @@ static void host(const char *line, bool wait) {
 static bool quiz_stop;
 static bool quiz_wait(const char *caption) {
 	ui_caption(UI_CAP_THINK, caption);
-	ui_pose(0.8f, 0, true);
+	ui_pose(1, 0, true);   /* (fully thinking, as for a question: her spectacles catch the light) */
 	hints(1, "B:Stop the quiz");
 	bool ok = true;
 	while (ai_state() == AI_BUSY) {

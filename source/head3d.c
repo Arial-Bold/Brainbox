@@ -470,6 +470,7 @@ static void spline(const V3 *k, int nk, V3 *out, int n) {
     }
 }
 
+int head3d_hair_style = 10;   /* (1.5: her bun lifted, two pencils through it, erasers up; the other numbers were options tried) */
 /* her hair, pulled back into a bun on top, from a head model
  * (hair_bun_mesh.h, made from it by tools/make_hair.py) */
 static void hair_mesh(void) {
@@ -490,6 +491,11 @@ static void hair_mesh(void) {
             float k = fminf((fabsf(p.x) - 0.30f) / 0.10f, 1) * fminf((p.z + 0.45f) / 0.25f, 1);
             if (k > 0) p.y += 0.07f * k;
         }
+        /* (option 4: the bun, at the back of her crown, lifted so it shows over her head from the front) */
+        if (head3d_hair_style >= 4 && p.z > 0.12f && p.y > 0.95f) {
+            float kz = fminf((p.z - 0.12f) / 0.35f, 1), ky = fminf((p.y - 0.95f) / 0.25f, 1);
+            p.y += 0.30f * kz * ky;
+        }
         /* (kept just off her skin: anything in or touching it moved out) */
         for (int it = 0; it < 8; it++) {
             float d = sculpt_d(p, skin, ns_);
@@ -509,6 +515,113 @@ static void hair_mesh(void) {
         tri[ntris][1] = (unsigned short)(base + bun_mesh_t[k][1]);
         tri[ntris][2] = (unsigned short)(base + bun_mesh_t[k][2]);
         ntris++;
+    }
+}
+
+/* (1.5 options, for choosing) something in her bun, so it shows from the
+ * front: 1 a gold fan comb with pearls, 2 a quill, 3 two crossed hair
+ * sticks, 4 a band of pearls round it. 0: nothing. */
+static void hair_ornament_at(int st);
+/* a pencil from its eraser (a) to its point (b): a six-sided yellow body, a
+ * metal band and a pink eraser, the sharpened wood and its lead (as his) */
+static void hair_pencil(V3 a, V3 b) {
+    V3 d = sub(b, a);
+    float len = sqrtf(dot(d, d));
+    d = mul(d, 1 / len);
+    #define AT(k) add(a, mul(d, (k) * len))
+    { V3 p[2] = { AT(0.05f), AT(0.13f) }; colour(0.98f, 0.55f, 0.60f, MATTE); tube(p, 2, 0.026f, 12); }   /* eraser */
+    { V3 p[2] = { AT(0.12f), AT(0.22f) }; colour(0.80f, 0.82f, 0.88f, GLOSS); tube(p, 2, 0.029f, 12); }   /* band */
+    { V3 p[2] = { AT(0.22f), AT(0.84f) }; colour(0.98f, 0.80f, 0.25f, GLOSS); tube(p, 2, 0.027f, 6); }    /* body */
+    { V3 p[3] = { AT(0.84f), AT(0.93f), AT(0.955f) }; float r[3] = { 0.026f, 0.012f, 0.007f };
+      colour(0.93f, 0.78f, 0.58f, MATTE); tube_r(p, 3, r, 6); }                                          /* sharpened wood */
+    { V3 p[2] = { AT(0.955f), AT(1.0f) }; float r[2] = { 0.007f, 0.001f };
+      colour(0.25f, 0.25f, 0.28f, GLOSS); tube_r(p, 2, r, 6); }                                          /* lead */
+    #undef AT
+}
+
+static void hair_ornament(void) {
+    int st = head3d_hair_style;
+    if (st == 9) {   /* the lifted bun, two pencils crossed through it */
+        hair_pencil(v3(-0.50f, 1.12f, 0.32f), v3(0.46f, 1.74f, 0.48f));
+        hair_pencil(v3(0.50f, 1.10f, 0.30f), v3(-0.44f, 1.76f, 0.50f));
+        return;
+    }
+    if (st == 10) {   /* the same, erasers up */
+        /* (crossing inside the bun, the erasers out either side of it; the pair
+         * leaning a little to her left, our right, so it isn't too neat) */
+        V3 ends[4] = { v3(0.40f, 1.60f, 0.46f), v3(-0.52f, 0.94f, 0.30f), v3(-0.38f, 1.62f, 0.48f), v3(0.52f, 0.92f, 0.30f) };
+        const V3 c = v3(0, 1.32f, 0.4f);
+        const float a = -0.21f, ca = cosf(a), sa = sinf(a);   /* (about 12 degrees) */
+        for (int i = 0; i < 4; i++) {
+            float dx = ends[i].x - c.x, dy = ends[i].y - c.y;
+            ends[i].x = c.x + dx * ca - dy * sa;
+            ends[i].y = c.y + dx * sa + dy * ca;
+        }
+        hair_pencil(ends[0], ends[1]);
+        hair_pencil(ends[2], ends[3]);
+        return;
+    }
+    if (st >= 5) {   /* (the lifted bun, with one of the others where it meets her hair) */
+        int was = nverts;
+        hair_ornament_at(st - 4);
+        for (int i = was; i < nverts; i++) vp[i].y += 0.10f, vp[i].z += 0.04f;
+        return;
+    }
+    hair_ornament_at(st);
+}
+static void hair_ornament_at(int st) {
+    if (st == 1) {   /* a fan comb: gold ribs opening upward from where the bun meets her hair, a rim, pearls at the tips */
+        V3 piv = v3(0, 1.22f, 0.06f);
+        M3 tilt = rotx(-0.18f);   /* (leaning back a little, over the bun) */
+        colour(0.95f, 0.78f, 0.30f, GLOSS);
+        const int ribs = 9;
+        V3 rim[ribs];
+        for (int i = 0; i < ribs; i++) {
+            float a = 3.1415927f * (0.10f + 0.80f * i / (ribs - 1));
+            V3 tip = add(piv, apply(&tilt, v3(cosf(a) * 0.34f, sinf(a) * 0.30f, 0)));
+            V3 path[2] = { piv, tip };
+            tube(path, 2, 0.013f, 6);
+            rim[i] = tip;
+        }
+        tube(rim, ribs, 0.016f, 6);
+        colour(0.98f, 0.97f, 1.0f, GLOSS);
+        for (int i = 0; i < ribs; i++) ell(rim[i].x, rim[i].y, rim[i].z, 0.03f, 0.03f, 0.03f, 10, 6, NULL);
+        colour(0.95f, 0.78f, 0.30f, GLOSS);
+        V3 bar[2] = { add(piv, v3(-0.12f, -0.01f, 0)), add(piv, v3(0.12f, -0.01f, 0)) };
+        tube(bar, 2, 0.026f, 8);
+    } else if (st == 2) {   /* a quill: a gold band where the bun meets her hair, the feather sweeping up and out */
+        V3 q[7];
+        float rad[7] = { 0.014f, 0.04f, 0.065f, 0.075f, 0.07f, 0.045f, 0.008f };
+        for (int i = 0; i < 7; i++) {
+            float u = i / 6.0f;
+            q[i] = v3(0.12f + 0.42f * u, 1.20f + 0.62f * u - 0.18f * u * u, 0.08f + 0.20f * u);
+        }
+        colour(0.97f, 0.95f, 0.92f, MATTE);
+        tube_r(q, 7, rad, 12);
+        colour(0.80f, 0.74f, 0.62f, MATTE);
+        V3 shaft[2] = { v3(0.08f, 1.14f, 0.03f), q[6] };
+        tube(shaft, 2, 0.008f, 6);
+        colour(0.95f, 0.78f, 0.30f, GLOSS);
+        V3 band[2] = { v3(0.05f, 1.15f, 0.02f), v3(0.15f, 1.24f, 0.09f) };
+        tube(band, 2, 0.026f, 10);
+    } else if (st == 3) {   /* two hair sticks crossed through the bun: a pencil, and one of dark wood with a pearl */
+        colour(0.98f, 0.80f, 0.25f, GLOSS);
+        V3 a[2] = { v3(-0.50f, 1.02f, 0.30f), v3(0.42f, 1.62f, 0.44f) };
+        tube(a, 2, 0.026f, 6);
+        colour(0.98f, 0.55f, 0.60f, MATTE);
+        ell(-0.52f, 1.01f, 0.30f, 0.03f, 0.03f, 0.03f, 10, 6, NULL);
+        colour(0.30f, 0.18f, 0.12f, GLOSS);
+        V3 b[2] = { v3(0.50f, 1.00f, 0.28f), v3(-0.40f, 1.64f, 0.46f) };
+        tube(b, 2, 0.022f, 8);
+        colour(0.98f, 0.97f, 1.0f, GLOSS);
+        ell(0.52f, 0.99f, 0.28f, 0.042f, 0.042f, 0.042f, 12, 8, NULL);
+    } else if (st == 4) {   /* the bun lifted higher (in hair_mesh), with a band of pearls round its foot */
+        colour(0.98f, 0.97f, 1.0f, GLOSS);
+        V3 c = v3(0, 1.30f, 0.40f);
+        for (int i = 0; i < 24; i++) {
+            float a = 6.2831853f * i / 24;
+            ell(c.x + cosf(a) * 0.27f, c.y, c.z + sinf(a) * 0.30f, 0.034f, 0.034f, 0.034f, 10, 6, NULL);
+        }
     }
 }
 
@@ -842,6 +955,7 @@ static void build(const HeadPose *ps, bool S) {
     make_zmap();
     sculpt();   /* head, face, ears, neck and hair: one smooth surface */
     if (who == 1) hair_mesh();   /* (her bob: the hair model) */
+    if (who == 1) hair_ornament();
     }
     for (int sx = -1; sx <= 1; sx += 2) {
         if (S) {
