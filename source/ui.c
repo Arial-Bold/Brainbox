@@ -125,6 +125,10 @@ static struct {
 	char hints[UI_HINTS_MAX][32];
 	int hint_count;
 	char toast[96];
+	/* (1.5) the quiz's scoreboard: a little brass abacus by his shoulder */
+	bool qb_on;
+	int qb_np, qb_max, qb_turn, qb_score[4], qb_point_seq[4];
+	char qb_name[4][16];
 	u32 toast_at;
 	/* the stage */
 	int side;
@@ -190,6 +194,18 @@ static inline u64 pt_now(void) { return gettime(); }
 static inline void pt_add(int k, u64 since) { pt_sum[k] += ticks_to_microsecs(gettime() - since); }
 
 void ui_screen(int s) { L(); sc.screen = s; U(); }
+
+void ui_quiz_board(int np, const char names[][16], const int *score, int max, int turn) {
+	L();
+	sc.qb_on = true;
+	sc.qb_np = np < 1 ? 1 : np > 4 ? 4 : np;
+	sc.qb_max = max < 1 ? 1 : max > 15 ? 15 : max;
+	sc.qb_turn = turn;
+	for (int i = 0; i < sc.qb_np; i++) { sc.qb_score[i] = score[i]; snprintf(sc.qb_name[i], sizeof(sc.qb_name[i]), "%s", names[i]); }
+	U();
+}
+void ui_quiz_point(int p) { L(); if (p >= 0 && p < 4) sc.qb_point_seq[p]++; U(); }
+void ui_quiz_board_hide(void) { L(); sc.qb_on = false; U(); }
 int ui_get_screen(void) { return sc.screen; }
 void ui_status(const char *a, const char *b) { L(); cpy(sc.status1, a, TXT); cpy(sc.status2, b, TXT); U(); }
 void ui_hints(const char *const *h, int n) {
@@ -981,6 +997,85 @@ void ui_intro_frames(char *out, int cap) {
 		              if_cpu[i] / 10, if_cpu[i] % 10, if_gpu[i] / 10, if_gpu[i] % 10, if_total[i] > 180 ? "  <- late" : "");
 }
 static bool head_made;   /* (1.4: he's made after the first few frames, so the room shows straight away) */
+/* (1.5) The quiz's scoreboard: a small brass abacus floating by his right
+ * shoulder (where the pencil usually is), one rod per player, a gold bead
+ * slid across for each point. It's sized to fit however many players and
+ * questions there are, so nothing runs off the bottom. */
+static void quiz_board(float cx, float t) {
+	static float k, bead_x[4][15], pulse[4];
+	static int seen_seq[4];
+	static u32 last;
+	u32 now = now_ms();
+	float dt = last ? (now - last) / 1000.0f : 0;
+	if (dt > 0.1f) dt = 0.1f;
+	last = now;
+	bool want = sc.qb_on && sc.screen == UI_STAGE && !sc.overlay && sc.intro == 0;
+	k += ((want ? 1.0f : 0.0f) - k) * clamp01(dt * 5);
+	head3d_pencil(k < 0.5f);
+	if (k < 0.02f) { for (int p = 0; p < 4; p++) seen_seq[p] = sc.qb_point_seq[p]; return; }
+	int np = sc.qb_np, max = sc.qb_max;
+	/* the size: rows of a name line and a rod, inside a brass frame */
+	const float FRAME = 5, PAD = 6, NAME_H = 12, ROD_H = 10, ROW_GAP = 6, W = 128;
+	float row_h = NAME_H + 2 + ROD_H;
+	float H = 2 * (FRAME + PAD) + np * row_h + (np - 1) * ROW_GAP;
+	float x = cx + 62, y = 214 + 2.0f * sinf(t * 1.4f);
+	if (y + H > 372) y = 372 - H;   /* (always clear of the caption bar) */
+	/* tilted a little, like a prop he's holding up */
+	Mtx m, r, a, b;
+	float px = x + W / 2, py = y + H / 2;
+	guMtxTrans(a, -px, -py, 0);
+	guMtxRotDeg(r, 'z', 4);
+	guMtxConcat(r, a, b);
+	guMtxTrans(a, px, py, 0);
+	guMtxConcat(a, b, m);
+	GX_LoadPosMtxImm(m, GX_PNMTX0);
+	#define KA(c) alpha((c), k)
+	/* a soft hologram glow round it, then the brass frame and the dark board */
+	shadow(x, y, W, H, 8, 6, KA(rgba(90, 170, 255, 60)));
+	rrect_v(x, y, W, H, 8, KA(rgba(0xe2, 0xc0, 0x66, 255)), KA(rgba(0x9c, 0x7a, 0x26, 255)));
+	outline(x, y, W, H, 8, 1, KA(rgba(160, 230, 255, 150)));
+	float ix = x + FRAME, iy = y + FRAME, iw = W - 2 * FRAME, ih = H - 2 * FRAME;
+	rrect_v(ix, iy, iw, ih, 4, KA(rgba(0x2a, 0x1f, 0x3c, 255)), KA(rgba(0x1a, 0x14, 0x28, 255)));
+	float rx = ix + PAD, rw = iw - 2 * PAD;
+	/* beads: as wide as fit the rod (fifteen to a rod at most), with a gap between those counted and the rest */
+	float gap = 1, split = 6;
+	float bw = (rw - split - (max - 1) * gap) / max;
+	if (bw > 7) bw = 7;
+	for (int p = 0; p < np; p++) {
+		float ry = iy + PAD + p * (row_h + ROW_GAP);
+		int score = sc.qb_score[p] < 0 ? 0 : sc.qb_score[p] > max ? max : sc.qb_score[p];
+		if (sc.qb_point_seq[p] != seen_seq[p]) { seen_seq[p] = sc.qb_point_seq[p]; pulse[p] = 1; }
+		pulse[p] -= dt * 1.2f;
+		if (pulse[p] < 0) pulse[p] = 0;
+		bool turn = p == sc.qb_turn;
+		Color nc = turn ? rgba(255, 226, 122, 255) : TEXT;
+		float nx = rx;
+		if (turn) { circle(nx + 2.5f, ry + NAME_H / 2, 2.5f, KA(GOLD)); nx += 8; }
+		char num[8];
+		snprintf(num, sizeof(num), "%d", score);
+		float numw = text_width(num, 11);
+		text(nx, ry + NAME_H / 2, sc.qb_name[p], 11, KA(nc), 0, rx + rw - numw - 6 - nx);   /* (a long name is shortened to fit) */
+		text(rx + rw, ry + NAME_H / 2, num, 11, KA(nc), 2, 0);
+		/* the rod, and its beads: counted ones at the right end, the rest at the left */
+		float rod_y = ry + NAME_H + 2 + ROD_H / 2;
+		rect(rx, rod_y - 1, rw, 2, KA(rgba(0xc7, 0xa2, 0x4a, 255)));
+		for (int i = 0; i < max; i++) {
+			bool counted = i >= max - score;
+			float target = rx + i * (bw + gap) + (counted && score < max ? split : 0);
+			if (bead_x[p][i] == 0) bead_x[p][i] = target;
+			bead_x[p][i] += (target - bead_x[p][i]) * clamp01(dt * 9);
+			Color c = counted ? mix(GOLD, rgba(255, 250, 200, 255), pulse[p]) : rgba(0x6a, 0x5c, 0x7c, 255);
+			rrect_v(bead_x[p][i], rod_y - ROD_H / 2 + 0.5f, bw, ROD_H - 1, bw / 2, KA(mix(c, rgba(255, 255, 255, 255), 0.25f)), KA(c));
+		}
+		if (pulse[p] > 0) outline(rx - 3, ry - 2, rw + 6, row_h + 4, 4, 1.5f, KA(alpha(GOLD, pulse[p])));
+	}
+	/* faint hologram scanlines over it */
+	for (float sy = y + 2; sy < y + H; sy += 4) rect(x, sy, W, 1, KA(rgba(170, 230, 255, 18)));
+	#undef KA
+	guMtxIdentity(m);
+	GX_LoadPosMtxImm(m, GX_PNMTX0);
+}
+
 static void head_pass(float x, float alpha_k, float mirror, HeadBox *box) {
 	/* 3D, on the GPU (see head3d.c), then back to drawing in 2D */
 	if (alpha_k <= 0 || !head_made) { if (box) box->x0 = box->x1 = box->y0 = box->y1 = 0; return; }
@@ -1193,6 +1288,7 @@ static void stage(void) {
 		}
 		GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
 	}
+	quiz_board(cx, t);   /* (1.5: the quiz's scoreboard, when there's a quiz) */
 	STEP(14);
 	{ u64 pt_g = pt_now(); bloom(); pt_add(PT_BLOOM, pt_g); }
 	STEP(15);

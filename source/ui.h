@@ -87,6 +87,13 @@ void ui_chat(const char *you, const char *him);
 void ui_chat_scroll(int lines);
 int  ui_chat_more(void);   /* lines of his answer below the bubble (0: all showing) */
 
+/* (1.5) the quiz's scoreboard (a brass abacus by his shoulder, in place of
+ * the pencil): np players (up to 4), their names and scores, max points a
+ * player can get (up to 15), whose turn it is (-1: nobody's) */
+void ui_quiz_board(int np, const char names[][16], const int *score, int max, int turn);
+void ui_quiz_point(int player);   /* a point for them: the bead slides over with a gold flash */
+void ui_quiz_board_hide(void);
+
 /* the description bar (Settings, the panels) and the controls along the bottom */
 void ui_status(const char *line1, const char *line2);
 /* "key:label", where the key is S (the Control Stick), A, B, X, Y, Z, ST (START), KB (the keyboard), MIC (the microphone's button) or none ("label") */

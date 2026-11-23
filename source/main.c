@@ -1418,6 +1418,8 @@ static void quiz(const char *request) {
 		if (k > 0) rounds = k <= 7 ? 5 : k <= 12 ? 10 : 15;
 		else host(qline("Five, ten or fifteen questions?", "Five, ten or fifteen questions?"), false);
 	}
+	/* the scoreboard appears by his shoulder */
+	ui_quiz_board(np, (const char (*)[16])names, score, rounds, 0);
 	/* the questions, a few at a time */
 	int total = np * rounds;
 	static char avoid[1200];
@@ -1428,7 +1430,8 @@ static void quiz(const char *request) {
 		if (quiz_next >= quiz_nitems) {
 			int want = total - turn < 10 ? total - turn + 2 : 10;   /* (a couple spare, in case of a bad one) */
 			if (!quiz_fetch(topic, want, avoid)) {
-				if (quiz_stop) { host(qline("Maybe another time, then!", "Okay, another time!"), false); return; }
+				if (quiz_stop) { ui_quiz_board_hide(); host(qline("Maybe another time, then!", "Okay, another time!"), false); return; }
+				ui_quiz_board_hide();
 				host(qline("Och, my brain's gone a wee bit foggy and I can't think of any questions just now. Let's try again later!",
 				           "Oh no, I can't seem to find any questions just now. Let's try again later!"), false);
 				return;
@@ -1443,6 +1446,7 @@ static void quiz(const char *request) {
 			                                        "Okay! %d questions each on %s. %s, you're first!"), rounds, topic, names[0]);
 			host(line, true);
 		}
+		ui_quiz_board(np, (const char (*)[16])names, score, rounds, who);   /* (whose turn it is) */
 		int qnum = turn / np + 1;
 		if (np == 1) snprintf(line, sizeof(line), "Question %d. %s", qnum, it->q);
 		else snprintf(line, sizeof(line), "%s, question %d. %s", names[who], qnum, it->q);
@@ -1456,7 +1460,8 @@ static void quiz(const char *request) {
 			char bye[700];
 			if (np == 1) snprintf(bye, sizeof(bye), qline("Stopping there? Righto. You got %d out of %d. Well played!", "Stopping there? Okay! You got %d out of %d. Nicely done!"), score[0], turn);
 			else snprintf(bye, sizeof(bye), qline("Stopping there? Righto. The scores were: %s. Well played, all!", "Stopping there? Okay! The scores were: %s. Nicely played, everyone!"), line);
-			host(bye, false);
+			host(bye, true);
+			ui_quiz_board_hide();
 			return;
 		}
 		char react[400];
@@ -1467,16 +1472,15 @@ static void quiz(const char *request) {
 			char bye[700];
 			if (np == 1) snprintf(bye, sizeof(bye), qline("Stopping there? Righto. You got %d out of %d. Well played!", "Stopping there? Okay! You got %d out of %d. Nicely done!"), score[0], turn);
 			else snprintf(bye, sizeof(bye), qline("Stopping there? Righto. The scores were: %s. Well played, all!", "Stopping there? Okay! The scores were: %s. Nicely played, everyone!"), line);
-			host(bye, false);
+			host(bye, true);
+			ui_quiz_board_hide();
 			return;
 		}
-		if (right) score[who]++;
+		if (right) { score[who]++; ui_quiz_point(who); ui_quiz_board(np, (const char (*)[16])names, score, rounds, who); }
 		ui_layout(1);
 		ui_chat(reply, react);
 		speech_say(react);
 		if (right) { ui_chuckle(); sound_play(SFX_CONFIRM); }
-		quiz_scores(line, sizeof(line), np, names, score);
-		if (np > 1) ui_toast(line);
 		while (speech_busy()) read_input();
 		wait_frames(20);
 	}
@@ -1501,9 +1505,12 @@ static void quiz(const char *request) {
 		else snprintf(line, sizeof(line), qline("And that's the end of the quiz! The scores: %s. Our winner is %s! Well played, all.",
 		                                        "And that's the quiz! The scores: %s. And the winner is %s! Nicely played, everyone."), sc, names[best]);
 	}
-	host(line, false);
+	ui_quiz_board(np, (const char (*)[16])names, score, rounds, -1);
 	ui_chuckle();
 	sound_play(SFX_CONFIRM);
+	host(line, true);
+	wait_frames(120);   /* (the final scores stay up a moment) */
+	ui_quiz_board_hide();
 }
 
 static void conversation(void) {

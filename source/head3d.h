@@ -37,5 +37,7 @@ int  head3d_get_character(void);
 /* (1.4) The globe turns to show this place (degrees) and holds it, with a
  * glowing mark on it, for this many seconds, then turns on as before. */
 void head3d_globe_point(float lat, float lon, float seconds);
+/* (1.5) the pencil shown, or hidden (the quiz's abacus floats in its place) */
+void head3d_pencil(bool shown);
 /* his colours are multiplied by this when drawn (white: as they are; a pale blue for a ghostly hologram) */
 void head3d_tint(u8 r, u8 g, u8 b);
