@@ -97,7 +97,7 @@ static int nturns;
 static AiBrain brain = AI_GEMINI;
 static char key[200], model[80];
 static volatile AiState state;
-static char answer[ANSWER_MAX], question[1200];
+static char answer[ANSWER_MAX], question[2400];
 static thr_t th;
 static bool testing;
 

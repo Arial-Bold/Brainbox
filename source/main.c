@@ -1260,15 +1260,16 @@ static void quiz_topic_in(const char *q, char *out, int cap) {
 
 /* More questions from the AI: true if some came. avoid: answers already used. */
 static bool quiz_fetch(const char *topic, int want, const char *avoid) {
-	static char sys[1400], req[1400];
+	static char sys[1600], req[2400];
 	snprintf(sys, sizeof(sys),
 	         "You write questions for a quiz game played out loud on a Nintendo GameCube: a speech synthesizer reads each "
 	         "question, and the players say their answers. So: short questions (under 25 words) in plain spoken English, "
 	         "each with one short, clear answer (a name, a number, a word or two) that is easy to say and to judge; no "
 	         "multiple choice, no trick questions, nothing with several right answers. Mix easy and medium questions. Every "
+	         "question must be about a different fact, with a different answer: never the same question twice, even reworded. Every "
 	         "fact must be correct and well established. Reply with exactly %d lines and nothing else, each in the form: "
 	         "Q: the question || A: the answer", want);
-	snprintf(req, sizeof(req), "Topic: %s. Write %d questions.%s%s", topic, want, avoid[0] ? " Don't use any of these answers again: " : "", avoid);
+	snprintf(req, sizeof(req), "Topic: %s. Write %d questions.%s%s", topic, want, avoid[0] ? " These have been used already, so don't ask about any of them again: " : "", avoid);
 	ai_raw(sys, req);
 	if (!quiz_wait(qline("Hmm, let me think up some good questions\x85", "Ooh, let me find some good questions\x85"))) return false;
 	if (ai_state() != AI_DONE) return false;
@@ -1313,6 +1314,61 @@ static void quiz_plain(const char *in, char *out, size_t cap) {
 	if (!strncmp(out, "the ", 4)) memmove(out, out + 4, strlen(out + 4) + 1);
 }
 
+/* (1.5) as quiz_plain, with numbers said as words made digits ("twenty one" -> "21", "six" -> "6") */
+static void quiz_norm(const char *in, char *out, size_t cap) {
+	static const char *const ones[] = { "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+	                                    "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen" };
+	static const char *const tens[] = { "", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety" };
+	char p[200];
+	quiz_plain(in, p, sizeof(p));
+	size_t n = 0;
+	out[0] = 0;
+	char *sv = NULL;
+	for (char *w = strtok_r(p, " ", &sv); w; w = strtok_r(NULL, " ", &sv)) {
+		int v = -1;
+		for (int i = 0; i < 20 && v < 0; i++) if (!strcmp(w, ones[i])) v = i;
+		for (int i = 2; i < 10 && v < 0; i++) if (!strcmp(w, tens[i])) v = i * 10;
+		char num[8];
+		if (v >= 20 && v % 10 == 0) {   /* ("twenty one") */
+			char *nx = strtok_r(NULL, " ", &sv);
+			int u = -1;
+			for (int i = 1; nx && i < 10 && u < 0; i++) if (!strcmp(nx, ones[i])) u = i;
+			snprintf(num, sizeof(num), "%d", v + (u > 0 ? u : 0));
+			n += snprintf(out + n, n < cap ? cap - n : 0, "%s%s", n ? " " : "", num);
+			if (nx && u < 0) n += snprintf(out + n, n < cap ? cap - n : 0, " %s", nx);
+		} else if (v >= 0) {
+			snprintf(num, sizeof(num), "%d", v);
+			n += snprintf(out + n, n < cap ? cap - n : 0, "%s%s", n ? " " : "", num);
+		} else n += snprintf(out + n, n < cap ? cap - n : 0, "%s%s", n ? " " : "", w);
+		if (n >= cap) { out[cap - 1] = 0; break; }
+	}
+}
+
+/* is needle in hay as whole words (both from quiz_norm)? */
+static bool quiz_has_words(const char *hay, const char *needle) {
+	size_t n = strlen(needle);
+	if (!n) return false;
+	for (const char *p = hay; (p = strstr(p, needle)); p++)
+		if ((p == hay || p[-1] == ' ') && (p[n] == 0 || p[n] == ' ')) return true;
+	return false;
+}
+
+/* (1.5) the words that matter: quiz_norm, without filler like "I think it's" or "the answer is" */
+static void quiz_core(const char *in, char *out, size_t cap) {
+	static const char *const filler[] = { "i", "think", "its", "it", "s", "is", "the", "a", "an", "answer", "um", "uh", "er", "erm", "oh", "hmm",
+	                                      "well", "maybe", "that", "thats", "would", "be", "im", "m", "pretty", "sure", "guess", "say", "id", "d", "my", "was" };
+	char p[200];
+	quiz_norm(in, p, sizeof(p));
+	size_t n = 0;
+	out[0] = 0;
+	char *sv = NULL;
+	for (char *w = strtok_r(p, " ", &sv); w; w = strtok_r(NULL, " ", &sv)) {
+		bool f = false;
+		for (unsigned k = 0; k < sizeof(filler) / sizeof(filler[0]) && !f; k++) f = !strcmp(w, filler[k]);
+		if (!f && n + strlen(w) + 2 < cap) n += snprintf(out + n, cap - n, "%s%s", n ? " " : "", w);
+	}
+}
+
 /* is it a pass? ("pass", "I don't know", "skip") */
 static bool quiz_pass(const char *t) {
 	return says(t, "pass") || says(t, "dont know") || says(t, "no idea") || says(t, "skip") || says(t, "not sure") || says(t, "give up");
@@ -1325,10 +1381,25 @@ static bool quiz_judge(const QuizItem *it, const char *who, const char *said, ch
 		snprintf(react, cap, qline("No bother, %s! The answer was %s.", "No worries, %s! The answer was %s."), who, it->a);
 		return false;
 	}
+	/* (1.5) the right answer said plainly, a number as digits or words ("6" for "six"): right, without asking the AI,
+	 * which has been known to mark those wrong) */
+	{
+		char a[QUIZ_AMAX + 8], s[200];
+		quiz_core(it->a, a, sizeof(a));
+		quiz_core(said, s, sizeof(s));
+		if (a[0] && !strcmp(s, a)) {
+			static const char *const sc[] = { "Aye, that's right, %s!", "Spot on, %s! Well done!", "Correct, %s! Splendid!", "That's it exactly, %s. Bravo!" };
+			static const char *const hr[] = { "Yes! That's right, %s!", "Correct, %s! Nicely done!", "Spot on, %s!", "That's it, %s! Brilliant!" };
+			int k = (int)(gettime() % 4);
+			snprintf(react, cap, ui_set.character == UI_CHAR_HER ? hr[k] : sc[k], who);
+			return true;
+		}
+	}
 	static char sys[2400], req[700];
 	snprintf(sys, sizeof(sys), "%s You are hosting a quiz game. Judge the player's answer fairly and kindly: accept small "
 	         "spelling or speech-recognition slips, other names for the same thing, and answers that are clearly right but "
-	         "worded differently; a surname alone is fine for a person, and a number written as words is fine. Start your "
+	         "worded differently; a surname alone is fine for a person, and a number is the same answer whether it's written "
+	         "in digits or in words (6 and six are both right for six). Start your "
 	         "reply with the single word RIGHT or WRONG, then one short sentence reacting in character, by the player's name. "
 	         "If they're wrong, say the correct answer. Don't ask a question back.", ai_persona());
 	snprintf(req, sizeof(req), "Question: %s\nCorrect answer: %s\n%s answered: \"%s\"", it->q, it->a, who, said);
@@ -1347,9 +1418,9 @@ static bool quiz_judge(const QuizItem *it, const char *who, const char *said, ch
 	}
 	/* (the AI couldn't say: a plain comparison) */
 	char a[QUIZ_AMAX + 8], s[200];
-	quiz_plain(it->a, a, sizeof(a));
-	quiz_plain(said, s, sizeof(s));
-	bool right = a[0] && s[0] && (strstr(s, a) || (strlen(s) >= 3 && strstr(a, s)));
+	quiz_norm(it->a, a, sizeof(a));
+	quiz_norm(said, s, sizeof(s));
+	bool right = a[0] && s[0] && (quiz_has_words(s, a) || (strlen(s) >= 3 && quiz_has_words(a, s)));
 	if (right) snprintf(react, cap, qline("Aye, that's right, %s!", "Yes! That's right, %s!"), who);
 	else snprintf(react, cap, qline("Och, not quite, %s. It was %s.", "Oh, not quite, %s. It was %s."), who, it->a);
 	return right;
@@ -1434,9 +1505,12 @@ static void quiz(const char *request) {
 	ui_quiz_board(np, (const char (*)[16])names, score, rounds, 0);
 	/* the questions, a few at a time */
 	int total = np * rounds;
-	static char avoid[1200];
+	static char avoid[1100];
 	avoid[0] = 0;
 	quiz_nitems = quiz_next = 0;
+	/* (1.5) what's been asked, so nothing comes up twice even if the AI repeats itself */
+	static char used_a[64][QUIZ_AMAX], used_q[64][QUIZ_QMAX];
+	int nused = 0, refetch = 0;
 	for (int turn = 0; turn < total; turn++) {
 		int who = turn % np;
 		if (quiz_next >= quiz_nitems) {
@@ -1448,6 +1522,21 @@ static void quiz(const char *request) {
 				           "Oh no, I can't seem to find any questions just now. Let's try again later!"), false);
 				return;
 			}
+		}
+		/* (a whole batch of repeats: asked again, a few times at most) */
+		{
+			char a[QUIZ_AMAX], q[QUIZ_QMAX];
+			quiz_norm(quiz_items[quiz_next].a, a, sizeof(a));
+			quiz_plain(quiz_items[quiz_next].q, q, sizeof(q));
+			bool dup = false;
+			for (int i = 0; i < nused && !dup; i++) dup = !strcmp(used_a[i], a) || !strcmp(used_q[i], q);
+			if (dup && refetch < 3) {   /* (skipped; a batch of nothing but repeats counts towards asking again) */
+				if (++quiz_next >= quiz_nitems) refetch++;
+				turn--;
+				continue;
+			}
+			refetch = 0;
+			if (nused < 64) { snprintf(used_a[nused], QUIZ_AMAX, "%s", a); snprintf(used_q[nused], QUIZ_QMAX, "%s", q); nused++; }
 		}
 		QuizItem *it = &quiz_items[quiz_next++];
 		size_t al = strlen(avoid);
