@@ -795,10 +795,10 @@ static void floor_make(void) {
 	floor_ready = true;
 }
 
-static void floor_draw(float cx) {
+static void floor_draw(float cx, float k) {
 	if (!floor_ready) floor_make();
 	mode_tex(&floor_tex, false);
-	Color line = rgba(52, 52, 120, 255);
+	Color line = rgba(52, 52, 120, (u8)(255 * k));
 	float x0 = cx - FLOOR_SPAN / 2, x1 = cx + FLOOR_SPAN / 2, y0 = HORIZON, y1 = HORIZON + FLOOR_TH;
 	GX_Begin(GX_QUADS, GX_VTXFMT0, 4);
 	vtx(x0, y0, line, 0, 0); vtx(x1, y0, line, 1, 0); vtx(x1, y1, line, 1, 1); vtx(x0, y1, line, 0, 1);
@@ -838,15 +838,23 @@ static void pedestal_ring(float cx, float k) {
 	GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
 }
 
+static volatile bool char_known;   /* (1.5) the settings are read: which hologram it is, is known */
 static void room(float cx) {
 	float fx = vl, fy = vt, fw = vr - vl, fh = vb - vt;
 	rect_v(fx, fy, fw, HORIZON - fy, rgba(7, 7, 18, 255), rgba(14, 12, 38, 255));
 	rect_v(fx, HORIZON, fw, fy + fh - HORIZON, rgba(10, 9, 30, 255), rgba(16, 13, 40, 255));
+	/* (1.5) Until the settings are read, the shape of the picture (4:3 or 16:9, the
+	 * overscan) isn't known, so only the plain room shows (the same at any shape);
+	 * the floor and the pedestal fade in once it is, at the right size, rather than
+	 * showing first at the wrong one and then jumping) */
+	static float k;
+	if (char_known && k < 1) k = k + 1.0f / 15 > 1 ? 1 : k + 1.0f / 15;
+	if (k <= 0) return;
 	/* the floor: the apps' grid, in perspective, as a smooth (filtered) picture */
-	floor_draw(cx);
+	floor_draw(cx, k);
 	/* the pedestal: a glowing ring on the floor */
 	float py = HORIZON + 30;
-	soft_blob(cx, py, 125, 17, rgba(20, 30, 80, 200));
+	soft_blob(cx, py, 125, 17, rgba(20, 30, 80, (u8)(200 * k)));
 	/* (the ring itself is drawn later, over his reflection: pedestal_ring) */
 }
 
@@ -995,7 +1003,6 @@ static void pose_update(float t) {
 
 static void frame_setup(void);
 u64 ui_first_frame_at, ui_head_frame_at;   /* (for boot.txt) */
-static volatile bool char_known;   /* (1.5) the settings are read: which hologram it is, is known */
 void ui_character_known(void) { char_known = true; }
 /* (1.4) each frame of the opening, for boot.txt: how long it took in all, and its parts (tenths of a ms) */
 #define IF_MAX 160
