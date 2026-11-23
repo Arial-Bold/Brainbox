@@ -43,6 +43,7 @@ typedef struct {
 	int character;    /* which hologram: UI_CHAR_SCOTTY or UI_CHAR_HER (chat.hologram in brainbox.ini) */
 	int holo_sound;   /* 1 = the hologram's quiet background sound (the hum and far-off bells); sound.hologram=0: off */
 	char home_town[64];/* for the weather and the local time: "" = Auto (guessed from the network); chat.home_town */
+	int memory;       /* 1 = he remembers you from one day to the next (memory.txt); chat.memory=0: off */
 } UiSettings;
 
 extern UiSettings ui_set;
@@ -56,7 +57,8 @@ const char *ui_resolution_name(int r);
 /* --------------------------------------------------------------- lifetime */
 
 void ui_init(void);
-extern u64 ui_first_frame_at, ui_head_frame_at;   /* when the first frame reached the TV, and the first with him made (gettime; for boot.txt) */           /* video, graphics and the drawing thread (call first) */
+extern u64 ui_first_frame_at, ui_head_frame_at;
+void ui_intro_frames(char *out, int cap);   /* (1.5) the opening's frame times, as text (for boot.txt) */   /* when the first frame reached the TV, and the first with him made (gettime; for boot.txt) */           /* video, graphics and the drawing thread (call first) */
 void ui_shutdown(void);       /* before rebooting or starting another program */
 
 /* ------------------------------------------------------------------ scene */

@@ -31,7 +31,7 @@
 
 /* ================================================================ settings */
 
-UiSettings ui_set = { UI_RES_AUTO, 0, 1, 0, 8, 4, 1, 3 /* Groq */, "", { "", "", "", "" }, { "", "", "", "" }, 0, 1, 0, 1, 1, UI_CHAR_SCOTTY, 1, "" };
+UiSettings ui_set = { UI_RES_AUTO, 0, 1, 0, 8, 4, 1, 3 /* Groq */, "", { "", "", "", "" }, { "", "", "", "" }, 0, 1, 0, 1, 1, UI_CHAR_SCOTTY, 1, "", 1 };
 const char *ui_char_name(int c) { return c == UI_CHAR_HER ? UI_HER_NAME : "Professor Scotty"; }
 static char settings_file[300];
 static const char *brain_ids[UI_BRAINS] = { "gemini", "claude", "openai", "groq" };
@@ -75,6 +75,7 @@ void ui_settings_load(void) {
 		else if (!strcmp(line, "chat.captions")) ui_set.captions = v ? 1 : 0;
 		else if (!strcmp(line, "chat.web_search")) ui_set.web_search = v ? 1 : 0;
 		else if (!strcmp(line, "chat.hologram")) ui_set.character = clampi(v, 0, UI_CHARS - 1);
+		else if (!strcmp(line, "chat.memory")) ui_set.memory = v ? 1 : 0;
 		else if (!strcmp(line, "chat.home_town")) snprintf(ui_set.home_town, sizeof(ui_set.home_town), "%s", val);
 		else if (!strcmp(line, "exit.launcher")) snprintf(ui_set.launcher, sizeof(ui_set.launcher), "%s", val);
 		else if (!strcmp(line, "brain")) { for (int i = 0; i < UI_BRAINS; i++) if (!strcmp(val, brain_ids[i])) ui_set.brain = i; }
@@ -107,6 +108,7 @@ bool ui_settings_save(void) {
 	if (!ui_set.intro) n += snprintf(out + n, sizeof(out) - n, "display.intro=0\n");
 	if (!ui_set.web_search) n += snprintf(out + n, sizeof(out) - n, "chat.web_search=0\n");
 	if (!ui_set.holo_sound) n += snprintf(out + n, sizeof(out) - n, "sound.hologram=0\n");
+	if (!ui_set.memory) n += snprintf(out + n, sizeof(out) - n, "chat.memory=0\n");
 	n += snprintf(out + n, sizeof(out) - n, "chat.hologram=%d\n", ui_set.character);
 	if (ui_set.home_town[0]) n += snprintf(out + n, sizeof(out) - n, "chat.home_town=%s\n", ui_set.home_town);
 	return storage_write_atomic(settings_file, out, (size_t)n);
@@ -967,6 +969,17 @@ static void pose_update(float t) {
 
 static void frame_setup(void);
 u64 ui_first_frame_at, ui_head_frame_at;   /* (for boot.txt) */
+/* (1.5) each frame of the opening, for boot.txt: how long it took in all, and its parts (tenths of a ms) */
+#define IF_MAX 160
+static u16 if_total[IF_MAX], if_head[IF_MAX], if_cpu[IF_MAX], if_gpu[IF_MAX];
+static int if_n;
+static u64 if_build_us;   /* this frame's head building (set in stage) */
+void ui_intro_frames(char *out, int cap) {
+	int n = snprintf(out, cap, "The opening, frame by frame (ms: whole frame / making him / drawing / graphics chip):\n");
+	for (int i = 0; i < if_n && n < cap - 40; i++)
+		n += snprintf(out + n, cap - n, "%3d: %3u.%u  %3u.%u  %3u.%u  %3u.%u%s\n", i, if_total[i] / 10, if_total[i] % 10, if_head[i] / 10, if_head[i] % 10,
+		              if_cpu[i] / 10, if_cpu[i] % 10, if_gpu[i] / 10, if_gpu[i] % 10, if_total[i] > 180 ? "  <- late" : "");
+}
 static bool head_made;   /* (1.4: he's made after the first few frames, so the room shows straight away) */
 static void head_pass(float x, float alpha_k, float mirror, HeadBox *box) {
 	/* 3D, on the GPU (see head3d.c), then back to drawing in 2D */
@@ -1090,6 +1103,7 @@ static void stage(void) {
 		u64 pt_b = pt_now();
 		head3d_build(&pose);
 		pt_add(PT_BUILD, pt_b);
+		if_build_us = ticks_to_microsecs(gettime() - pt_b);
 		head_made = true;
 	}
 	STEP(4);
@@ -1690,6 +1704,7 @@ static void *video_main(void *arg) {
 			}
 		}
 		u64 pt_c = pt_now();
+		if_build_us = 0;
 		draw_frame();
 		STEP(50);
 		GX_SetZMode(GX_TRUE, GX_ALWAYS, GX_TRUE);   /* so the copy clears depth too */
@@ -1707,6 +1722,18 @@ static void *video_main(void *arg) {
 		u64 pt_v = pt_now();
 		VIDEO_WaitVSync();
 		pt_add(PT_VSYNC, pt_v);
+		{	/* (the opening's frames, for boot.txt) */
+			static u64 last_end;
+			u64 end = gettime();
+			if (sc.intro == 2 && last_end && if_n < IF_MAX) {
+				if_total[if_n] = (u16)(ticks_to_microsecs(end - last_end) / 100);
+				if_head[if_n] = (u16)(if_build_us / 100);
+				if_cpu[if_n] = (u16)(ticks_to_microsecs(pt_d - pt_c) / 100);
+				if_gpu[if_n] = (u16)(ticks_to_microsecs(pt_v - pt_d) / 100);
+				if_n++;
+			}
+			last_end = end;
+		}
 		fb ^= 1;
 	}
 	return NULL;

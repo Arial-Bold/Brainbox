@@ -34,7 +34,8 @@ int  head3d_triangles(void);
 /* which hologram: 0 Professor Scotty, 1 her (made afresh at the next build) */
 void head3d_character(int c);
 int  head3d_get_character(void);
-/* whether hologram c has been made yet (the first time takes a moment: hers most of all) */
-bool head3d_made(int c);
+/* (1.5) The globe turns to show this place (degrees) and holds it, with a
+ * glowing mark on it, for this many seconds, then turns on as before. */
+void head3d_globe_point(float lat, float lon, float seconds);
 /* his colours are multiplied by this when drawn (white: as they are; a pale blue for a ghostly hologram) */
 void head3d_tint(u8 r, u8 g, u8 b);

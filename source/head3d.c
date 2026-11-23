@@ -46,6 +46,11 @@ static V3 apply(const M3 *m, V3 v) {
 
 #define GLOBE_C v3(-1.08f, 0.18f, -0.30f)
 static int globe_v0, globe_v1;   /* the globe's vertices (lit again each frame as it turns) */
+/* (1.5) the globe turning to show a place (the weather's), with a glowing mark on it */
+static volatile int point_req;           /* bumped by head3d_globe_point */
+static volatile float point_lat, point_lon, point_hold;
+static float mark_k;                     /* 0..1: how much the mark shows */
+static V3 mark_at;                       /* where it is (on the globe, unturned) */
 
 /* which hologram: 0 Professor Scotty, 1 her (see make_blobs_her and build) */
 static int who;
@@ -1088,6 +1093,14 @@ static void build(const HeadPose *ps, bool S) {
      * head3d_draw), so its land stays put on it. */
     {
         V3 gc0 = GLOBE_C;
+        if (D && mark_k > 0.01f) {   /* (1.5) the mark on the place being shown: a little glowing bead, pulsing */
+            int was = cur_grp;
+            cur_grp = G_GLOBE;
+            float r = (0.012f + 0.004f * sinf(t * 6)) * mark_k;
+            colour(1.0f, 0.86f, 0.35f, EMIS);
+            ell(mark_at.x, mark_at.y, mark_at.z, r, r, r, 10, 6, NULL);
+            cur_grp = was;
+        }
         if (S) {
         cur_grp = G_GLOBE;
         globe_v0 = nverts;
@@ -1370,10 +1383,45 @@ void head3d_build(const HeadPose *ps) {
     head_bob = 0.02f * sinf(t * 1.1f);
     globe_bob = 0.04f * sinf(t * 1.4f);
     {
-        /* a turn every 20 seconds, west to east, on an axis tilted like the Earth's */
-        float a = -6.2831853f * t / 20.0f, c = cosf(a), sn = sinf(a);
-        M3 spin = { { { c, 0, sn }, { 0, 1, 0 }, { -sn, 0, c } } };
+        /* a turn every 20 seconds, west to east, on an axis tilted like the Earth's
+         * (1.5: or turning to show a place, and holding it there a while) */
+        static float ga, last_t, point_target, point_until;
+        static int point_seen;
+        float dt = last_t > 0 ? t - last_t : 0;
+        if (dt < 0 || dt > 0.25f) dt = 0;
+        last_t = t;
         M3 tilt = rotz(-0.41f);
+        if (point_req != point_seen) {
+            point_seen = point_req;
+            /* where the place is on the globe, and the turn that brings it round to face him */
+            float th = (90 - point_lat) * 3.1415927f / 180, ph = (point_lon + 180) * 6.2831853f / 360;
+            V3 u = v3(sinf(th) * cosf(ph), cosf(th), sinf(th) * sinf(ph));
+            mark_at = add(GLOBE_C, mul(u, 0.226f));
+            V3 cam = norm(sub(v3(0, CAMY, CAMZ), GLOBE_C));
+            float best = -2;
+            for (int k = 0; k < 360; k++) {
+                float a = 6.2831853f * k / 360, c = cosf(a), sn = sinf(a);
+                V3 r = v3(c * u.x + sn * u.z, u.y, -sn * u.x + c * u.z);
+                r = apply(&tilt, r);
+                float d = dot(r, cam);
+                if (d > best) { best = d; point_target = a; }
+            }
+            point_until = t + point_hold;
+        }
+        if (t < point_until) {
+            float diff = remainderf(point_target - ga, 6.2831853f);   /* (the short way round) */
+            ga += diff * (1 - expf(-dt * 2.5f));
+            mark_k += (1 - mark_k) * (1 - expf(-dt * 4));
+        } else {
+            ga -= 6.2831853f * dt / 20.0f;
+            mark_k += (0 - mark_k) * (1 - expf(-dt * 2));
+        }
+        ga = remainderf(ga, 6.2831853f);
+        static float last_ga;
+        bool turning_fast = fabsf(remainderf(ga - last_ga, 6.2831853f)) > 0.012f;   /* (turning to a place: relit all at once) */
+        last_ga = ga;
+        float a = ga, c = cosf(a), sn = sinf(a);
+        M3 spin = { { { c, 0, sn }, { 0, 1, 0 }, { -sn, 0, c } } };
         for (int i = 0; i < 3; i++) for (int j = 0; j < 3; j++)
             globe_rot.m[i][j] = tilt.m[i][0] * spin.m[0][j] + tilt.m[i][1] * spin.m[1][j] + tilt.m[i][2] * spin.m[2][j];
         /* its light stays where it is while it turns: lit again with the turned normals.
@@ -1383,7 +1431,7 @@ void head3d_build(const HeadPose *ps) {
         static bool was_shown;
         static int part;
         if (ps->props && globe_v1 > globe_v0) {
-            int step = was_shown ? 4 : 1;   /* (all of it, the first time it's shown again) */
+            int step = was_shown && !turning_fast ? 4 : 1;   /* (all of it, the first time it's shown again, or while it turns quickly) */
             for (int i = globe_v0 + (step > 1 ? part : 0); i < globe_v1; i += step) {
                 float r, g, b;
                 light_n(&r, &g, &b, i, apply(&globe_rot, vn[i]));
@@ -1540,3 +1588,8 @@ void head3d_draw(float x, float y, float scale, float alpha, float mirror_y, Hea
 }
 
 int head3d_triangles(void) { return ntris; }
+
+void head3d_globe_point(float lat, float lon, float seconds) {
+    point_lat = lat; point_lon = lon; point_hold = seconds;
+    point_req++;
+}

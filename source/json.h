@@ -18,3 +18,5 @@ void buf_free(Buf *b);
 bool json_get_string(const char *doc, const char *path, char *out, size_t cap);
 /* The number at path (a number, or a string holding one). False if it isn't there. */
 bool json_get_number(const char *doc, const char *path, double *out);
+/* UTF-8 text into the font's characters (CP-1252). */
+void utf8_to_cp1252(const char *in, char *out, size_t cap);

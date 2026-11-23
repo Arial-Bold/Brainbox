@@ -8,6 +8,9 @@
 #include "net/thr.h"
 #include "net/storage.h"
 #include "weather.h"
+#include "lookup.h"
+#include "memory.h"
+#include "head3d.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -48,6 +51,20 @@ static const char *SEARCH_RULE =
 static const char *WEATHER_RULE =
     " If you're asked about the weather, the temperature outside or a forecast, reply with only the word WEATHER, "
     "followed by the place if they named one (for example: WEATHER Paris, France). For their own weather, just WEATHER.";
+/* (1.5) always: facts from Wikipedia, and the news, looked up by BrainBox itself (any brain, no key needed) */
+static const char *WIKI_RULE =
+    " If answering needs facts you aren't sure of about a specific person, place, organization, book, film, game, "
+    "invention or event (including who holds a job now), reply with only the word WIKI followed by what to look up "
+    "on Wikipedia (for example: WIKI Ada Lovelace).";
+static const char *NEWS_RULE =
+    " If they ask for the news or the headlines, reply with only the word NEWS, followed by the topic if they named "
+    "one (for example: NEWS space exploration).";
+/* (1.5) remembering them from one day to the next */
+static const char *MEMORY_RULE =
+    " If they tell you something about themselves worth remembering next time (family, pets, interests, plans, "
+    "where they're from), add it at the very end of your reply on a line of its own, like: NOTE: has a dog called Max. "
+    "If they tell you their name, also add a line: NAME: followed by their first name. If they ask you to forget "
+    "what you know about them, reply with only the word FORGET.";
 /* added when it can't (or the search didn't work) */
 static const char *NO_SEARCH =
     " If a question needs up-to-date information you don't have, say kindly that you can't be sure of the latest, "
@@ -67,8 +84,8 @@ static volatile bool searching;
 void ai_set_search(const char *k, bool on) { snprintf(search_key, sizeof(search_key), "%s", k ? k : ""); search_on = on && search_key[0]; }
 bool ai_searching(void) { return searching; }
 
-static char sys[5200];   /* the instructions for this request */
-static char context[400];   /* today's date and time, and where they live (made for each question) */
+static char sys[9000];   /* the instructions for this request */
+static char context[3200];   /* today's date and time, where they live, and what he remembers of them (made for each question) */
 static void make_sys(const char *extra) {
     snprintf(sys, sizeof(sys), "%s%s%s%s", character == 1 ? HER : SCOTTY, SPOKEN, context, extra ? extra : "");
 }
@@ -91,7 +108,8 @@ static void make_context(void) {
     weather_local_time(when, sizeof(when));
     int n = snprintf(context, sizeof(context), " It is now %s, local time.", when);
     if (where[0] && n < (int)sizeof(context))
-        snprintf(context + n, sizeof(context) - n, " The person is in or near %s (use this for anything local).", where);
+        n += snprintf(context + n, sizeof(context) - n, " The person is in or near %s (use this for anything local).", where);
+    if (!testing && n < (int)sizeof(context)) memory_context(context + n, (int)sizeof(context) - n);
 }
 
 static const char *names[AI_COUNT] = { "Google Gemini", "Claude", "ChatGPT", "Groq" };
@@ -309,6 +327,22 @@ static bool google_answer(void) {
     return false;
 }
 
+/* did the brain answer with one of BrainBox's own words (WEATHER, WIKI, NEWS, FORGET), and what after it? */
+static bool wants_cmd(const char *a, const char *word, char *arg, size_t cap) {
+    while (*a == ' ' || *a == '\n') a++;
+    size_t wl = strlen(word);
+    if (strncmp(a, word, wl) || strlen(a) > 160) return false;
+    a += wl;
+    if (*a && *a != ' ' && *a != ':' && *a != '\n') return false;
+    while (*a == ' ' || *a == ':') a++;
+    snprintf(arg, cap, "%s", a);
+    char *nl = strchr(arg, '\n');
+    if (nl) *nl = 0;
+    size_t n = strlen(arg);
+    while (n && strchr(" .!?\"'", arg[n - 1])) arg[--n] = 0;
+    return true;
+}
+
 /* did the brain ask for the weather? ("WEATHER", or "WEATHER Paris, France"): the place, or "" for theirs */
 static bool wants_weather(const char *a, char *place, size_t cap) {
     while (*a == ' ' || *a == '\n') a++;
@@ -331,9 +365,10 @@ static void run_question(void) {
 }
 
 static void ask_brain(bool can_search, const char *facts) {
-    static char rules[1800];
+    static char rules[4200];
     if (facts) snprintf(rules, sizeof(rules), "%s", facts);   /* (answering from what was looked up) */
-    else snprintf(rules, sizeof(rules), "%s%s", testing ? "" : WEATHER_RULE,
+    else if (testing) snprintf(rules, sizeof(rules), "%s", NO_SEARCH);
+    else snprintf(rules, sizeof(rules), "%s%s%s%s%s", WEATHER_RULE, NEWS_RULE, WIKI_RULE, memory_on() ? MEMORY_RULE : "",
                   can_search ? SEARCH_RULE : search_key[0] ? NO_SEARCH : NO_SEARCH_KEY);
     make_sys(rules);
     char err[200] = "";
@@ -358,19 +393,58 @@ static void ask_brain(bool can_search, const char *facts) {
         }
         if (status == 200 && json_get_string(resp, path, answer, sizeof(answer)) && answer[0]) {
             plain_text(answer);
-            char place[100];
+            if (!testing) memory_take_notes(answer);   /* (what he's to remember: kept, and out of the answer) */
+            char place[100], arg[170];
+            static char report[2600], why[200], got[3200];
             if (!facts && !testing && wants_weather(answer, place, sizeof(place))) {   /* the weather: looked up here */
                 free(resp);
                 searching = true;
-                static char report[1200], why[200], got[1600];
-                if (weather_report(place, report, sizeof(report), why, sizeof(why)))
+                if (weather_report(place, report, sizeof(report), why, sizeof(why))) {
                     snprintf(got, sizeof(got), " You have just looked up the weather. %s Answer from this, briefly and "
                              "naturally, the way you'd say it aloud: the temperature with its units, what it's like, and "
                              "the forecast if they asked about later. Don't mention Open-Meteo unless asked.", report);
-                else
+                    double la, lo;
+                    weather_last_place(&la, &lo);
+                    head3d_globe_point((float)la, (float)lo, 25);   /* (the globe turns to show the place) */
+                } else
                     snprintf(got, sizeof(got), " You tried to look up the weather, but BrainBox %s. Say so kindly and briefly.", why);
                 searching = false;
                 ask_brain(false, got);
+                return;
+            }
+            if (!facts && !testing && wants_cmd(answer, "WIKI", arg, sizeof(arg))) {   /* Wikipedia: looked up here */
+                free(resp);
+                searching = true;
+                if (wiki_lookup(arg, report, sizeof(report), why, sizeof(why)))
+                    snprintf(got, sizeof(got), " You have just looked this up on Wikipedia. %s Answer their question from "
+                             "this, briefly, beginning with words like 'According to Wikipedia,'. If it doesn't answer "
+                             "the question, say so and share what you know.", report);
+                else
+                    snprintf(got, sizeof(got), " You tried to look this up, but BrainBox %s. Say so kindly, and share what you know.", why);
+                searching = false;
+                ask_brain(false, got);
+                return;
+            }
+            if (!facts && !testing && wants_cmd(answer, "NEWS", arg, sizeof(arg))) {   /* the headlines: looked up here */
+                free(resp);
+                searching = true;
+                char cc[4] = "";
+                weather_home_country(cc, sizeof(cc));
+                if (news_lookup(arg, cc, report, sizeof(report), why, sizeof(why)))
+                    snprintf(got, sizeof(got), " You have just checked the news. %s Tell them the main three or four "
+                             "headlines, briefly and naturally, the way you'd say it aloud, beginning by saying where they're "
+                             "from (for example 'According to Google News,'). Leave out the names of the sites each story came from.", report);
+                else
+                    snprintf(got, sizeof(got), " You tried to check the news, but BrainBox %s. Say so kindly and briefly.", why);
+                searching = false;
+                ask_brain(false, got);
+                return;
+            }
+            if (!facts && !testing && wants_cmd(answer, "FORGET", arg, sizeof(arg))) {   /* forgetting them, as asked */
+                free(resp);
+                memory_forget();
+                ask_brain(false, " You have just forgotten everything you remembered about the person, as they asked. "
+                                 "Say so warmly, in one short sentence.");
                 return;
             }
             if (can_search && wants_search(answer)) {   /* it needs looking up */
@@ -379,12 +453,12 @@ static void ask_brain(bool can_search, const char *facts) {
                 bool found = google_answer();
                 searching = false;
                 if (!found) { ask_brain(false, NULL); return; }   /* (couldn't: what he knows, then) */
-                if (!testing) { remember(true, question); remember(false, answer); }
+                if (!testing) { memory_take_notes(answer); remember(true, question); remember(false, answer); memory_asked(question); }
                 state = AI_DONE;
                 return;
             }
             if (gone && strcmp(use_model, model)) snprintf(model, sizeof(model), "%s", use_model);   /* (the usual one has gone: keep this one) */
-            if (!testing) { remember(true, question); remember(false, answer); }
+            if (!testing) { remember(true, question); remember(false, answer); memory_asked(question); }
             free(resp);
             state = AI_DONE;
             return;

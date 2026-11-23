@@ -39,6 +39,7 @@ static int home_gen;         /* bumped when it changes */
 static char known[120];      /* the town found for it, for Settings to show ("" = not yet) */
 
 static Place home;           /* (the AI's thread only) */
+static double last_lat, last_lon;   /* the place of the last weather report (for the globe) */
 static int home_for = -1;    /* the home_gen it was found for */
 static time_t home_tried;    /* when the last try failed */
 
@@ -365,7 +366,21 @@ bool weather_report(const char *place, char *facts, int cap, char *why, int whyc
         snprintf(why, whycap, "the weather service didn't answer just now");
         return false;
     }
+    last_lat = pl.lat; last_lon = pl.lon;
     return true;
+}
+
+void weather_home_country(char *cc, int cap) { snprintf(cc, cap, "%s", home.ok ? home.cc : ""); }
+
+void weather_last_place(double *lat, double *lon) { *lat = last_lat; *lon = last_lon; }
+
+int weather_local_hour(void) {
+    time_t now;
+    if (home.ok && home.has_offset && netio_time_synced()) now = netio_now() + home.offset;
+    else now = time(NULL);
+    struct tm tm;
+    gmtime_r(&now, &tm);
+    return tm.tm_hour;
 }
 
 void weather_home_known(char *name, int cap) {

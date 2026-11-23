@@ -27,4 +27,11 @@ void weather_local_time(char *out, int cap);
 /* The weather for place (NULL or "" for home): a few lines of facts for the
  * brain, in the units that place uses. On failure, false with why filled in
  * (for the brain to explain kindly). */
+/* the home town's country, as a two-letter code ("" if not known yet) */
+void weather_home_country(char *cc, int cap);
+/* where the last weather report was for (degrees) */
+void weather_last_place(double *lat, double *lon);
+/* the hour (0..23), local time, as weather_local_time has it */
+int weather_local_hour(void);
+
 bool weather_report(const char *place, char *facts, int cap, char *why, int whycap);

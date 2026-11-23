@@ -25,9 +25,10 @@
 #include "net/qrcodegen.h"
 #include "net/update.h"
 #include "weather.h"
+#include "memory.h"
 #include "voicefetch.h"
 
-const char appversion[] = "v1.4";
+const char appversion[] = "v1.5";
 
 /* ---------------------------------------------------------------- input */
 
@@ -1112,10 +1113,75 @@ static void conversation(void) {
 
 /* -------------------------------------------------------------- start */
 
+/* ------------------------------------------------------- saying hello */
+
+/* (1.5) What they say when BrainBox starts: a few to choose from, some for
+ * the time of day, and some for when they remember your name. */
+static const char *const HELLO_SCOTTY[] = {
+	"Hello there! I'm Professor Scotty. What would you like to know today?",
+	"Ah! There you are. Professor Scotty, at your service. What shall we puzzle over today?",
+	"Hmm? Oh, hello! I was just giving my globe a wee polish. What's on your mind?",
+	"Och, a visitor! Come in, come in. Ask me anything you like.",
+	"Ah, good to see you! My circuits are warm and my bow tie's straight. What shall we learn today?",
+	"Hmm, now where did I put my spectacles? Ah, never mind! Hello there. What would you like to know?",
+	"Ah! All systems at full power, as a certain engineer I know would say. What can I help you with?",
+	"Hello, hello! A fine day for a good question, aye? Let's hear it.",
+};
+static const char *const HELLO_SCOTTY_TIME[4] = {
+	"Good morning! Professor Scotty here, bright-eyed and ready. What shall we explore today?",
+	"Good afternoon! A grand time for a wee bit of learning, aye? What's your question?",
+	"Good evening! Settle in by the fire, and let's see what we can discover tonight.",
+	"Burning the midnight oil, are we? Och, me too. What's on your mind?",
+};
+static const char *const HELLO_SCOTTY_NAME[] = {
+	"Ah, %s! Welcome back. What shall we puzzle over today?",
+	"Hello again, %s! My globe's been spinning away, waiting for you. What's on your mind?",
+	"%s! There you are, my friend. Ask me anything you like.",
+};
+static const char *const HELLO_HER[] = {
+	"Hi there! I'm " UI_HER_NAME ". What would you like to know today?",
+	"Oh! Hello! I was just reshelving the poetry section. What can I help you find?",
+	"Ooh, a visitor! Pull up a chair. What are we curious about today?",
+	"Hi! " UI_HER_NAME ", head librarian and keeper of odd facts. Ask me anything.",
+	"Oh, hello! I've got my glasses on and a fresh cup of tea. What shall we look into?",
+	"Hi there! Every good question is the start of a story. What's yours today?",
+	"Ooh, perfect timing, I just finished a chapter. What would you like to talk about?",
+};
+static const char *const HELLO_HER_TIME[4] = {
+	"Good morning! The library's open and the coffee's on. What can I help you with?",
+	"Good afternoon! Perfect time for a little reading, or a big question. What's on your mind?",
+	"Good evening! Get comfy, and tell me what you're wondering about.",
+	"Oh! Up late with a good question? That's my favorite kind. What is it?",
+};
+static const char *const HELLO_HER_NAME[] = {
+	"Oh, %s! Welcome back. What are we curious about today?",
+	"Hi again, %s! I saved you a seat by the window. What's on your mind?",
+	"Ooh, %s! I was hoping you'd stop by. What shall we look into?",
+};
+#define COUNT(a) ((int)(sizeof(a) / sizeof((a)[0])))
+
+static void greeting(char *out, int cap) {
+	bool her = ui_set.character == UI_CHAR_HER;
+	static bool seeded;
+	if (!seeded) { srand((unsigned)gettime()); seeded = true; }
+	const char *name = memory_name();
+	int pick = rand() % 6;
+	if (name[0] && pick < 3) {   /* (half the time, when they know your name) */
+		const char *const *list = her ? HELLO_HER_NAME : HELLO_SCOTTY_NAME;
+		snprintf(out, cap, list[rand() % (her ? COUNT(HELLO_HER_NAME) : COUNT(HELLO_SCOTTY_NAME))], name);
+	} else if (pick == 3 || (!name[0] && pick == 0)) {   /* (now and then: the time of day) */
+		int h = weather_local_hour();
+		int part = h >= 5 && h < 12 ? 0 : h >= 12 && h < 18 ? 1 : h >= 18 && h < 23 ? 2 : 3;
+		snprintf(out, cap, "%s", her ? HELLO_HER_TIME[part] : HELLO_SCOTTY_TIME[part]);
+	} else {
+		snprintf(out, cap, "%s", her ? HELLO_HER[rand() % COUNT(HELLO_HER)] : HELLO_SCOTTY[rand() % COUNT(HELLO_SCOTTY)]);
+	}
+}
+
 /* (1.4) How long starting up takes, step by step: written to boot.txt beside
  * the app when display.fps=1 is in brainbox.ini (with the frame timings). */
 static u64 boot_t0;
-static char boot_log[900];
+static char boot_log[8000];
 static void boot_mark(const char *what) {
 	size_t n = strlen(boot_log);
 	snprintf(boot_log + n, sizeof(boot_log) - n, "%6u ms  %s\n", (unsigned)ticks_to_millisecs(gettime() - boot_t0), what);
@@ -1128,6 +1194,8 @@ static void boot_save(void) {
 	if (!ui_set.fps || !storage_ok()) return;
 	boot_mark_at("first picture on the TV", ui_first_frame_at);
 	boot_mark_at("first picture with the hologram made", ui_head_frame_at);
+	size_t n = strlen(boot_log);
+	if (n < sizeof(boot_log) - 100) { boot_log[n++] = '\n'; boot_log[n] = 0; ui_intro_frames(boot_log + n, (int)(sizeof(boot_log) - n)); }
 	char path[300];
 	storage_path(path, sizeof(path), "boot.txt");
 	storage_write_atomic(path, boot_log, strlen(boot_log));
@@ -1157,6 +1225,8 @@ int main(int argc, char **argv) {
 		ui_settings_path(path);
 		ui_settings_load();
 	}
+	memory_enable(ui_set.memory);
+	memory_load();   /* (what he remembers about you) */
 	boot_mark("SD card and settings read");
 	if (storage_ok()) update_remove_old();   /* (the version an update replaced, now this one has started) */
 	use_character();   /* (the hologram's voice, loaded in the background) */
@@ -1210,9 +1280,8 @@ int main(int argc, char **argv) {
 		ui_chuckle();
 		say("", ai_state() == AI_DONE ? ai_answer() : "Ah! That's much better. Ask me anything!");
 	} else {
-		char hello[160];
-		snprintf(hello, sizeof(hello), ui_set.character == UI_CHAR_HER ? "Hi there! I'm %s. What would you like to know today?"
-		                                                                 : "Hello there! I'm %s. What would you like to know today?", ui_char_name(ui_set.character));
+		char hello[200];
+		greeting(hello, sizeof(hello));
 		say("", hello);
 	}
 	boot_mark("first words said");
