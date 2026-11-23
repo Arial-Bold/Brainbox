@@ -230,7 +230,7 @@ float ui_intro_seconds(void) {
 	if (sc.intro == 0) return 1000;        /* (over, or skipped) */
 	return (now_ms() - sc.intro_at) / 1000.0f;
 }
-bool ui_intro_done(void) { return sc.intro == 0 || (sc.intro == 2 && now_ms() - sc.intro_at > 1500); }
+bool ui_intro_done(void) { return sc.intro == 0 || (sc.intro == 2 && now_ms() - sc.intro_at > (u32)(HOLO_DONE * 1000)); }
 void ui_typing(const char *t, bool masked) { L(); cpy(sc.typing, t, sizeof(sc.typing)); sc.masked = masked; U(); }
 void ui_chat(const char *you, const char *him) { L(); cpy(sc.you, you, sizeof(sc.you)); cpy(sc.him, him, sizeof(sc.him)); sc.him_scroll = 0; U(); }
 void ui_chat_scroll(int lines) {
@@ -1185,7 +1185,7 @@ static Intro intro_now(void) {
 	if (sc.intro == 1) { in.beam = in.head = in.sparkle = 0; return in; }
 	if (sc.intro != 2) return in;
 	float ti = (now_ms() - sc.intro_at) / 1000.0f;
-	if (ti >= 1.5f) { sc.intro = 0; return in; }
+	if (ti >= HOLO_DONE) { sc.intro = 0; return in; }
 	float g = holo_gate(ti);
 	if (ti < HOLO_LOCK) {
 		/* the stutter: the beam on and off with the buzz, him a faint, jumpy flicker */
@@ -1204,7 +1204,7 @@ static Intro intro_now(void) {
 		in.sparkle = p * 0.4f;
 	} else {
 		/* there: a glow that fades, the sparkles back */
-		float q = (ti - HOLO_SET) / (1.5f - HOLO_SET);
+		float q = (ti - HOLO_SET) / (HOLO_DONE - HOLO_SET);
 		in.glow = 1 - q;
 		in.sparkle = 0.4f + 0.6f * q;
 	}

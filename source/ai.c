@@ -748,6 +748,7 @@ void ai_hear(const short *pcm, int n, int rate, AiBrain e, const char *k, const 
     snprintf(ear_model, sizeof(ear_model), "%s", m ? m : "");
     heard[0] = 0;
     testing = false;
+    raw = false;   /* (1.5: after a quiz, a spoken question is an ordinary one again, with the weather, where they are and all) */
     start_with(hear_main);
 }
 const char *ai_heard(void) { return heard_ready ? heard : NULL; }

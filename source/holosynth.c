@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define LEN_S 2.4f
+#define LEN_S (2.4f * HOLO_SLOW)
 #define PI 3.14159265f
 
 int holo_length(void) { return (int)(LEN_S * HOLO_RATE); }
@@ -17,6 +17,7 @@ int holo_length(void) { return (int)(LEN_S * HOLO_RATE); }
 static const float gate_on[5][2] = { { 0.00f, 0.05f }, { 0.12f, 0.16f }, { 0.22f, 0.30f }, { 0.36f, 0.40f }, { 0.46f, 99 } };
 
 float holo_gate(float t) {
+    t /= HOLO_SLOW;   /* (the stutter's timing, slowed with the rest) */
     for (int i = 0; i < 5; i++) if (t >= gate_on[i][0] && t < gate_on[i][1]) return 1;
     return 0;
 }
@@ -36,16 +37,16 @@ bool holo_render(int16_t *out, int n) {
         float sq = sinf(2 * PI * 110 * t) >= 0 ? 1.0f : -1.0f;
         float buzz = sq * 0.3f + sinf(2 * PI * 220 * t) * 0.5f + sinf(2 * PI * 330 * t) * 0.2f;
         buzz_lp += 0.12f * (buzz - buzz_lp);
-        float be = gate_lp * clampf((LEN_S - t) / 1.4f, 0, 1) * (0.6f + 0.4f * clampf((0.6f - t) / 0.6f, 0, 1));
+        float be = gate_lp * clampf((LEN_S - t) / 1.4f, 0, 1) * (0.6f + 0.4f * clampf((0.6f * HOLO_SLOW - t) / (0.6f * HOLO_SLOW), 0, 1));
         v += buzz_lp * be * 0.22f;
         /* the zip up as it locks in */
-        float tt = t - 0.42f;
-        float f = 300 * powf(2400.0f / 300.0f, clampf(tt / 0.35f, 0, 1));
+        float tt = t - HOLO_LOCK, zl = 0.35f * HOLO_SLOW;
+        float f = 300 * powf(2400.0f / 300.0f, clampf(tt / zl, 0, 1));
         ph += 2 * PI * f / SR;
         if (ph > 2 * PI * 1000) ph -= 2 * PI * 1000;
-        if (tt >= 0 && tt < 0.35f) v += sinf(ph) * sinf(PI * clampf(tt / 0.35f, 0, 1)) * 0.25f;
+        if (tt >= 0 && tt < zl) v += sinf(ph) * sinf(PI * clampf(tt / zl, 0, 1)) * 0.25f;
         /* the two chimes */
-        static const float chime[2][2] = { { 0.78f, 784.0f }, { 0.93f, 1174.7f } };
+        static const float chime[2][2] = { { 0.78f * HOLO_SLOW, 784.0f }, { 0.93f * HOLO_SLOW, 1174.7f } };   /* (when: slowed; how they ring: as made) */
         for (int c = 0; c < 2; c++) {
             float ct = t - chime[c][0];
             if (ct < 0) continue;

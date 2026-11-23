@@ -5,8 +5,10 @@
 #include <stdint.h>
 
 #define HOLO_RATE 32000
-#define HOLO_LOCK 0.42f    /* seconds in: the zip, as it locks in */
-#define HOLO_SET 0.78f     /* the first chime: he's there */
+#define HOLO_SLOW 1.25f    /* (1.5: the opening played a quarter slower than it was made, to enjoy it) */
+#define HOLO_LOCK (0.42f * HOLO_SLOW)   /* seconds in: the zip, as it locks in */
+#define HOLO_SET (0.78f * HOLO_SLOW)    /* the first chime: he's there */
+#define HOLO_DONE (1.5f * HOLO_SLOW)    /* the opening over */
 
 int  holo_length(void);                  /* samples (mono 16-bit at HOLO_RATE) */
 bool holo_render(int16_t *out, int n);
