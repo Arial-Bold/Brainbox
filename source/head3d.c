@@ -549,8 +549,9 @@ static void hair_ornament(void) {
     if (st == 10) {   /* the same, erasers up */
         /* (crossing inside the bun, the erasers out either side of it; the pair
          * leaning a little to her left, our right, so it isn't too neat) */
-        V3 ends[4] = { v3(0.40f, 1.60f, 0.46f), v3(-0.52f, 0.94f, 0.30f), v3(-0.38f, 1.62f, 0.48f), v3(0.52f, 0.92f, 0.30f) };
-        const V3 c = v3(0, 1.32f, 0.4f);
+        /* (low enough that where they cross stays hidden in the bun even when she tilts her head forward) */
+        V3 ends[4] = { v3(0.40f, 1.54f, 0.46f), v3(-0.52f, 0.88f, 0.30f), v3(-0.38f, 1.56f, 0.48f), v3(0.52f, 0.86f, 0.30f) };
+        const V3 c = v3(0, 1.26f, 0.4f);
         const float a = -0.21f, ca = cosf(a), sa = sinf(a);   /* (about 12 degrees) */
         for (int i = 0; i < 4; i++) {
             float dx = ends[i].x - c.x, dy = ends[i].y - c.y;
@@ -559,6 +560,11 @@ static void hair_ornament(void) {
         }
         hair_pencil(ends[0], ends[1]);
         hair_pencil(ends[2], ends[3]);
+        /* (her hair filled in under the lifted bun, so there's no gap there to see through when she tilts her head) */
+        { int was = nverts;
+          colour(0.66f, 0.25f, 0.15f, MATTE);
+          ell(0, 1.32f, 0.58f, 0.19f, 0.13f, 0.22f, 18, 10, 0);
+          for (int i = was; i < nverts; i++) vsk[i] = 0.07f; }
         return;
     }
     if (st >= 5) {   /* (the lifted bun, with one of the others where it meets her hair) */
